@@ -41,3 +41,12 @@ example
 # generated native folders
 /ios
 /android
+
+# ios/android are generated (CNG)
+/ios
+/android
+
+# supabase
+supabase/.temp
+supabase/.branches
+.env
