@@ -358,6 +358,59 @@ export function Row({
   );
 }
 
+/** A small square-ish card in a wrapping grid: title over a soft detail. `on` outlines it in a magnet colour. */
+export function Tile({
+  title,
+  detail,
+  onPress,
+  on,
+  color = 'tomato',
+}: {
+  title: string;
+  detail?: string;
+  onPress: () => void;
+  on?: boolean;
+  color?: keyof Palette;
+}) {
+  const c = usePalette();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!on }}
+      accessibilityLabel={detail ? `${title}, ${detail}` : title}
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.tile,
+        { backgroundColor: c.paper, borderColor: on ? c[color] : c.rule },
+        pressed && { transform: [{ scale: 0.97 }] },
+      ]}>
+      <T size={16} weight="600" numberOfLines={2}>
+        {title}
+      </T>
+      {detail && (
+        <T size={14} soft>
+          {detail}
+        </T>
+      )}
+    </Pressable>
+  );
+}
+
+/** Star toggle, 48pt. Filled in orange when on. */
+export function StarToggle({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: on }}
+      onPress={onPress}
+      style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+      <Icon name={on ? { ios: 'star.fill', android: 'star' } : { ios: 'star', android: 'star_border' }} size={22} color={on ? c.orange : c.inkSoft} />
+    </Pressable>
+  );
+}
+
 export function Rule() {
   const c = usePalette();
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.rule }} />;
@@ -432,4 +485,5 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tile: { flexGrow: 1, flexBasis: '30%', minWidth: 100, minHeight: 72, borderRadius: 10, borderWidth: 2, padding: 12, gap: 2 },
 });

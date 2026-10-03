@@ -23,6 +23,15 @@ export type AbsenceRow = Absence & { id: string; created_at: string };
 export type SpendRow = Spend & { source: 'zepto' | 'local' | 'other'; store_name: string | null; created_at: string };
 export type LineRow = { id: string; spend_id: string; name: string; line_total_paise: number; kind: 'item' | 'fee' | 'discount' };
 export type EntryRow = PoolEntry & { id: string; occurred_at: string; note: string | null; spend_id: string | null };
+export type ProductRow = {
+  id: string;
+  name: string;
+  aliases: string[];
+  favourite: boolean;
+  default_price_paise: number | null;
+  track_stock: boolean;
+  category: string | null;
+};
 
 type Data = {
   household: Household;
@@ -32,6 +41,7 @@ type Data = {
   spends: SpendRow[];
   lines: LineRow[];
   entries: EntryRow[];
+  products: ProductRow[];
 };
 
 type Ctx = {
@@ -48,16 +58,21 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries] = await Promise.all([
+  const [household, members, absences, spends, lines, entries, products] = await Promise.all([
     supabase.from('household').select('*').eq('id', h).single(),
     supabase.from('member').select('*').eq('household_id', h).order('display_name'),
     supabase.from('member_absence').select('*').eq('household_id', h).order('from_date', { ascending: false }),
     supabase.from('spend').select('*').eq('household_id', h).order('occurred_at', { ascending: false }),
     supabase.from('spend_line').select('*').eq('household_id', h).order('created_at'),
     supabase.from('pool_entry').select('*').eq('household_id', h).order('occurred_at', { ascending: false }),
+    supabase
+      .from('product')
+      .select('id, name, aliases, favourite, default_price_paise, track_stock, category')
+      .eq('household_id', h)
+      .order('name'),
   ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
-  for (const r of [household, members, absences, spends, lines, entries]) if (r.error) throw r.error;
+  for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
     me,
@@ -66,6 +81,7 @@ async function load(userId: string): Promise<Data | null> {
     spends: spends.data!,
     lines: lines.data!,
     entries: entries.data!,
+    products: products.data!,
   };
 }
 
