@@ -1,7 +1,7 @@
 -- Products: household-scoped, no delete; add_spend keeps extraction + product_id; learn_alias.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(11);
+select plan(12);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -52,6 +52,8 @@ select is((select aliases from public.product where id = '66666666-0000-7000-800
 
 -- the outsider: can't see, insert into, or teach ansh's products
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
+select is((select count(*) from public.product where household_id = '11111111-0000-7000-8000-000000000001'), 0::bigint,
+  'non-member cannot read the household''s products');
 select throws_ok(
   $$ insert into public.product (id, household_id, name)
      values ('66666666-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000001', 'Sneaky') $$,
