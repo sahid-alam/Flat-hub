@@ -8,30 +8,44 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { matchProduct, normalizeExtraction, normalizeName, type Extraction } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
-import { formatINR, parseRupees } from '@/domain/money';
+import { formatINR, parseLineRupees, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
 import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
-import { supabase } from '@/lib/supabase';
+import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
 import { Choice, DateField, ErrorText, Field, Icon, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
 
 type Kind = 'item' | 'fee' | 'discount';
-type Line = { id: string; name: string; amount: string; kind: Kind; qty: number; unit: string | null; product_id: string | null };
+type Line = {
+  id: string;
+  name: string;
+  amount: string;
+  kind: Kind;
+  qty: number;
+  unit: string | null;
+  product_id: string | null;
+  confirmed: boolean; // exact name/alias match, or the mate tapped Yes; only these teach an alias
+};
 type Draft = {
   id: string; // one spend id per extraction: a retried save is a no-op, a new import is a new spend
   raw: unknown; // what the reader returned, kept on the spend for audit
   source: SpendRow['source'];
   store: string;
   total: string;
+  totalGuessed: boolean; // the bill had no total, so it's the lines' sum until the mate checks it
   date: string;
   lines: Line[];
 };
 
 const rupees = (paise: number) => String(Math.abs(paise) / 100); // display only; parsed back with parseRupees
 const stripDataUrl = (s: string) => s.replace(/^data:[^,]*,/, '');
-const imageType = (mime?: string | null) =>
-  mime === 'image/png' || mime === 'image/webp' ? mime : ('image/jpeg' as const);
+/** What the reader accepts. An unknown type is assumed JPEG; HEIC, GIF and the rest are refused here, before the upload. */
+function imageType(mime?: string | null): 'image/jpeg' | 'image/png' | 'image/webp' {
+  if (!mime || mime === 'image/jpeg' || mime === 'image/jpg') return 'image/jpeg';
+  if (mime === 'image/png' || mime === 'image/webp') return mime;
+  throw new Error('Use a JPEG, PNG or WebP image, or a screenshot.');
+}
 
 /** Base64 of a picked file: web hands us a data URL, native a file:// uri we read through fetch. */
 async function readBase64(uri: string): Promise<string> {
@@ -57,7 +71,11 @@ export default function ImportOrder() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const match = (name: string, kind: Kind) => (kind === 'item' ? (matchProduct(name, products)?.id ?? null) : null);
+  const match = (name: string, kind: Kind) => {
+    const p = kind === 'item' ? matchProduct(name, products) : null;
+    const n = normalizeName(name);
+    return { product_id: p?.id ?? null, confirmed: !!p && [p.name, ...p.aliases].some((a) => normalizeName(a) === n) };
+  };
 
   async function read(get: () => Promise<ExtractInput | null>) {
     setReadError(null);
@@ -75,6 +93,7 @@ export default function ImportOrder() {
         source: x.source,
         store: x.store_name ?? '',
         total: rupees(x.total_paise),
+        totalGuessed: problems.some((p) => p.startsWith('No total found')),
         date: x.occurred_on && x.occurred_on <= today() ? x.occurred_on : today(),
         lines: x.lines.map((l) => ({
           id: newId(),
@@ -83,7 +102,7 @@ export default function ImportOrder() {
           kind: l.kind,
           qty: l.qty,
           unit: l.unit,
-          product_id: match(l.name, l.kind),
+          ...match(l.name, l.kind),
         })),
       });
     } catch (e) {
@@ -98,19 +117,21 @@ export default function ImportOrder() {
       const res = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
       const a = res.assets?.[0];
       if (res.canceled || !a) return null;
-      const data = await readBase64(a.base64 ?? a.uri);
       const isPdf = a.mimeType === 'application/pdf' || a.name.toLowerCase().endsWith('.pdf');
-      return isPdf ? { type: 'pdf', data } : { type: 'image', media_type: imageType(a.mimeType), data };
+      const media_type = isPdf ? null : imageType(a.mimeType);
+      const data = await readBase64(a.base64 ?? a.uri);
+      return media_type ? { type: 'image', media_type, data } : { type: 'pdf', data };
     });
 
   const pickScreenshot = () =>
     read(async () => {
-      // quality < 1 re-encodes to JPEG: smaller upload, and no HEIC
+      // native: quality < 1 re-encodes to JPEG (smaller, no HEIC); web ignores it, so imageType still checks
       const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.7 });
       const a = res.assets?.[0];
       if (res.canceled || !a) return null;
+      const media_type = imageType(a.mimeType);
       const data = a.base64 ? stripDataUrl(a.base64) : await readBase64(a.uri);
-      return { type: 'image', media_type: imageType(a.mimeType), data };
+      return { type: 'image', media_type, data };
     });
 
   // ---------------------------------------------------------------- input stage
@@ -173,14 +194,15 @@ export default function ImportOrder() {
 
   const total = parseRupees(draft.total);
   const parsed = draft.lines.map((l) => {
-    const p = parseRupees(l.amount);
+    const p = parseLineRupees(l.amount);
     return { ...l, paise: p === null ? null : l.kind === 'discount' ? -p : p };
   });
-  const linesValid = parsed.length > 0 && parsed.every((l) => l.paise !== null && l.name.trim());
+  const linesValid = parsed.every((l) => l.paise !== null && l.name.trim()); // no lines is fine, as on /spend
   const linesTotal = parsed.reduce((a, l) => a + (l.paise ?? 0), 0);
   const balanced =
     total !== null && linesValid && linesBalance(total, parsed.map((l) => ({ line_total_paise: l.paise!, kind: l.kind })));
   // Re-run the domain checks on what's on screen, so the problems list follows every edit.
+  const ready = balanced && !draft.totalGuessed;
   const problems: string[] =
     total === null
       ? ['Enter the amount paid.']
@@ -225,7 +247,7 @@ export default function ImportOrder() {
         product_id: l.product_id,
       })),
     });
-    if (error) {
+    if (error && !(await landed('spend', draft.id))) {
       setBusy(false);
       return setError(error.message);
     }
@@ -235,7 +257,7 @@ export default function ImportOrder() {
       parsed.map((l) => {
         const p = products.find((x) => x.id === l.product_id);
         const n = normalizeName(l.name);
-        if (!p || n === normalizeName(p.name) || p.aliases.some((a) => normalizeName(a) === n)) return null;
+        if (!p || !l.confirmed || n === normalizeName(p.name) || p.aliases.some((a) => normalizeName(a) === n)) return null;
         return supabase.rpc('learn_alias', { p_product_id: p.id, p_alias: l.name.trim() });
       }),
     );
@@ -249,10 +271,28 @@ export default function ImportOrder() {
         label="Amount paid (₹)"
         big
         value={draft.total}
-        onChangeText={(t) => set({ total: t })}
+        onChangeText={(t) => set({ total: t, totalGuessed: false })}
         keyboardType="decimal-pad"
         placeholder="0"
       />
+
+      {draft.totalGuessed && (
+        <View style={{ gap: 4 }}>
+          <T size={15} weight="600" color={c.tomato}>
+            The total wasn't on the bill, so this is the lines' sum. Check what was actually paid (fees, coupons).
+          </T>
+          {total !== null && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => set({ totalGuessed: false })}
+              style={{ minHeight: 48, justifyContent: 'center' }}>
+              <T size={15} weight="600" color={c.blue}>
+                Yes, {formatINR(total)} is what we paid
+              </T>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <View style={{ gap: 8 }}>
         <T size={15} weight="600" soft>
@@ -303,7 +343,7 @@ export default function ImportOrder() {
         )}
       </View>
 
-      <Slip magnet={balanced ? 'green' : 'tomato'}>
+      <Slip magnet={ready ? 'green' : 'tomato'}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <T weight="600">Check the lines</T>
           {total !== null && (
@@ -321,7 +361,7 @@ export default function ImportOrder() {
                   <Field
                     label={l.qty !== 1 || l.unit ? `Line ${i + 1} · ${l.qty}${l.unit ? ` ${l.unit}` : ''}` : `Line ${i + 1}`}
                     value={l.name}
-                    onChangeText={(name) => update(i, { name, product_id: match(name, l.kind) })}
+                    onChangeText={(name) => update(i, { name, ...match(name, l.kind) })}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -337,7 +377,7 @@ export default function ImportOrder() {
               </View>
               <Choice
                 value={l.kind}
-                onChange={(kind) => update(i, { kind, product_id: match(l.name, kind) })}
+                onChange={(kind) => update(i, { kind, ...match(l.name, kind) })}
                 options={[
                   { value: 'item', label: 'Item' },
                   { value: 'fee', label: 'Fee' },
@@ -346,15 +386,31 @@ export default function ImportOrder() {
               />
               {l.kind === 'item' &&
                 (product ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Matched to ${product.name}. Tap to unlink.`}
-                    onPress={() => update(i, { product_id: null })}
-                    style={{ minHeight: 44, justifyContent: 'center' }}>
-                    <T size={15} weight="600" color={c.green}>
-                      Is {product.name} · tap if not
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <T size={15} weight="600" color={c.green} style={{ flex: 1 }}>
+                      {l.confirmed ? product.name : `Is it ${product.name}?`}
                     </T>
-                  </Pressable>
+                    {!l.confirmed && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Yes, line ${i + 1} is ${product.name}`}
+                        onPress={() => update(i, { confirmed: true })}
+                        style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
+                        <T size={15} weight="600" color={c.blue}>
+                          Yes
+                        </T>
+                      </Pressable>
+                    )}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Line ${i + 1} is not ${product.name}`}
+                      onPress={() => update(i, { product_id: null, confirmed: false })}
+                      style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
+                      <T size={15} weight="600" color={c.blue}>
+                        Not it
+                      </T>
+                    </Pressable>
+                  </View>
                 ) : (
                   <T size={15} soft>
                     New, not in your products yet
@@ -368,7 +424,7 @@ export default function ImportOrder() {
           outline
           icon={{ ios: 'plus', android: 'add' }}
           onPress={() =>
-            set({ lines: [...draft.lines, { id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null }] })
+            set({ lines: [...draft.lines, { id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false }] })
           }
         />
         {problems.map((p, i) => (
@@ -382,7 +438,7 @@ export default function ImportOrder() {
       <MagnetButton
         label={busy ? 'Saving…' : total ? `Save ${formatINR(total)}` : 'Save'}
         color="tomato"
-        disabled={busy || !balanced}
+        disabled={busy || !ready}
         onPress={save}
       />
       <MagnetButton label="Start over" outline disabled={busy} onPress={() => setDraft(null)} />

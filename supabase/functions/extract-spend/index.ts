@@ -91,13 +91,15 @@ function buildContent(body: unknown): Anthropic.Beta.BetaContentBlockParam[] {
   }
 }
 
-/** Gateway verify_jwt also accepts the public anon key, so require a signed-in user. */
-async function isSignedIn(auth: string | null) {
+/** Gateway verify_jwt also accepts the public anon key, so require a household member:
+ * RLS on member only returns rows from the caller's own households.
+ * ponytail: no rate limit; sign-ups are off (config.toml + dashboard), so callers are the flat. */
+async function isMember(auth: string | null) {
   if (!auth?.startsWith('Bearer ')) return false;
-  const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/auth/v1/user`, {
+  const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/member?select=id&limit=1`, {
     headers: { apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', Authorization: auth },
   });
-  return res.ok;
+  return res.ok && ((await res.json()) as unknown[]).length > 0;
 }
 
 const fixtureLines = [
@@ -122,7 +124,7 @@ const FIXTURE = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply(405, { error: 'Use POST.' });
-  if (!(await isSignedIn(req.headers.get('Authorization')))) return reply(401, { error: 'Sign in first.' });
+  if (!(await isMember(req.headers.get('Authorization')))) return reply(401, { error: 'Sign in to your flat first.' });
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_CHARS) return reply(413, { error: 'That file is too big. Keep it under about 4 MB.' });

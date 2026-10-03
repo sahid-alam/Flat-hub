@@ -1,4 +1,4 @@
-// Kitty home quick-add: tap a favourite, tap save. A local spend, paid by me from the kitty,
+// Kitty home quick-add: tap a favourite, tap save. A local spend paid by me, from the kitty unless I say own pocket,
 // with one line pointing at the product so stock (M3) can pick it up later.
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -7,8 +7,8 @@ import { Pressable, View } from 'react-native';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
-import { supabase } from '@/lib/supabase';
-import { DISPLAY, ErrorText, Field, MagnetButton, Slip, T, Tile, usePalette } from '@/ui/kit';
+import { landed, supabase } from '@/lib/supabase';
+import { Choice, DISPLAY, ErrorText, Field, MagnetButton, Slip, T, Tile, usePalette } from '@/ui/kit';
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
 
@@ -58,6 +58,7 @@ function Confirm({ product, onDone }: { product: ProductRow; onDone: () => void 
   const [text, setText] = useState(rupees(product.default_price_paise));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paidFrom, setPaidFrom] = useState<'pool' | 'personal'>('pool');
   const [ids] = useState(() => ({ spend: newId(), line: newId() })); // a retried save is a no-op
   const paise = parseRupees(text);
 
@@ -71,13 +72,15 @@ function Confirm({ product, onDone }: { product: ProductRow; onDone: () => void 
         source: 'local',
         store_name: null,
         paid_by: me.id,
-        paid_from: 'pool',
+        paid_from: paidFrom,
         total_paise: paise,
       },
       p_lines: [{ id: ids.line, name: product.name, product_id: product.id, line_total_paise: paise, kind: 'item' }],
     });
-    setBusy(false);
-    if (error) return setError(error.message);
+    if (error && !(await landed('spend', ids.spend))) {
+      setBusy(false);
+      return setError(error.message);
+    }
     await reload();
     onDone();
   }
@@ -92,8 +95,18 @@ function Confirm({ product, onDone }: { product: ProductRow; onDone: () => void 
         placeholder="0"
         autoFocus={!product.default_price_paise}
       />
+      <Choice
+        value={paidFrom}
+        onChange={setPaidFrom}
+        options={[
+          { value: 'pool', label: 'The kitty' },
+          { value: 'personal', label: 'Own pocket' },
+        ]}
+      />
       <T size={15} soft>
-        Local shop · paid by you · from the kitty
+        {paidFrom === 'pool'
+          ? 'Local shop · paid by you · from the kitty'
+          : "Local shop · paid by you · goes on the treasurer's \"to reimburse\" list"}
       </T>
       <ErrorText error={error} />
       <MagnetButton

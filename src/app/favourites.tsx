@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
-import { supabase } from '@/lib/supabase';
+import { landed, supabase } from '@/lib/supabase';
 import { Choice, ErrorText, Field, Heading, MagnetButton, Row, Rule, Slip, StarToggle, Screen, T } from '@/ui/kit';
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
@@ -120,11 +120,14 @@ function AddProduct({ householdId, names, onAdded }: { householdId: string; name
       default_price_paise: price.trim() ? paise : null,
       favourite: favourite === 'yes',
     });
+    // An error after our row landed (lost response, then a 23505 on the retry) is a success.
+    if (error && !(await landed('product', id))) {
+      setBusy(false);
+      await onAdded();
+      return setError(error.code === '23505' ? `${trimmed} is already on the list.` : error.message);
+    }
     setBusy(false);
-    // 23505 on our own id means a retry already landed; on the name index it means a duplicate.
-    if (error && error.code !== '23505') return setError(error.message);
     await onAdded();
-    if (error) return setError(`${trimmed} is already on the list.`);
     setName('');
     setPrice('');
     setId(newId());

@@ -22,5 +22,9 @@ export function parseRupees(text: string): number | null {
   return paise > 0 && Number.isSafeInteger(paise) ? paise : null;
 }
 
+/** Like parseRupees, but an explicit "0" is ₹0 (a freebie line on a bill) instead of invalid. */
+export const parseLineRupees = (text: string): number | null =>
+  /^[₹\s]*0+(\.0+)?\s*$/.test(text) ? 0 : parseRupees(text);
+
 /** UPI `am` parameter: rupees with exactly two decimals. */
 export const upiAmount = (paise: number): string => `${Math.floor(paise / 100)}.${String(paise % 100).padStart(2, '0')}`;

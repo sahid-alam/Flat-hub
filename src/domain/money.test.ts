@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatINR, parseRupees, upiAmount } from './money.ts';
+import { formatINR, parseLineRupees, parseRupees, upiAmount } from './money.ts';
 import { uuidv7 } from './id.ts';
 
 test('formatINR uses Indian digit grouping', () => {
@@ -20,6 +20,12 @@ test('parseRupees → paise', () => {
   assert.equal(parseRupees('₹ 45.5'), 4_550);
   assert.equal(parseRupees('30'), 3_000);
   for (const bad of ['', '0', '-5', '1.234', 'abc', '1e3']) assert.equal(parseRupees(bad), null);
+});
+
+test('parseLineRupees allows an explicit ₹0, nothing else new', () => {
+  for (const zero of ['0', '0.00', '₹ 0']) assert.equal(parseLineRupees(zero), 0);
+  assert.equal(parseLineRupees('45.5'), 4550);
+  for (const bad of ['', ' ', '-0', 'abc']) assert.equal(parseLineRupees(bad), null);
 });
 
 test('upiAmount has two decimals', () => {

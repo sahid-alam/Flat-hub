@@ -23,3 +23,10 @@ export async function insertOnce(table: string, row: object) {
   const { error } = await supabase.from(table).insert(row);
   if (error && error.code !== '23505') throw error;
 }
+
+/** After a failed save with a client id: did it commit anyway (response lost)? Then the user must not
+ * edit and resave, because the retry would be a silent no-op on the old values. */
+export async function landed(table: string, id: string) {
+  const { data } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
+  return !!data;
+}
