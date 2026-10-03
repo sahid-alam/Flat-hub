@@ -5,7 +5,7 @@ const expoConfig = require("eslint-config-expo/flat");
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ["dist/*"],
+    ignores: ["dist/*", "supabase/functions/*"],
   },
   // RN <Text> renders raw strings; HTML entity escaping doesn't apply
   { rules: { "react/no-unescaped-entities": "off" } },
