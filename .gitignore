@@ -50,3 +50,4 @@ example
 supabase/.temp
 supabase/.branches
 .env
+.vercel

@@ -1,5 +1,4 @@
 import type { Session } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { Absence, Books, PoolEntry, Spend } from '@/domain/kitty';
@@ -70,23 +69,9 @@ async function load(userId: string): Promise<Data | null> {
   };
 }
 
-/** Magic-link fallback for native: the link lands as flathub://#access_token=…&refresh_token=… */
-function useMagicLink() {
-  const url = Linking.useLinkingURL();
-  useEffect(() => {
-    const hash = url?.split('#')[1];
-    if (!hash) return;
-    const p = new URLSearchParams(hash);
-    const access_token = p.get('access_token');
-    const refresh_token = p.get('refresh_token');
-    if (access_token && refresh_token) supabase.auth.setSession({ access_token, refresh_token });
-  }, [url]);
-}
-
 export function BooksProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [data, setData] = useState<Data | null | undefined>(undefined);
-  useMagicLink();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));

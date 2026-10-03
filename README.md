@@ -12,8 +12,28 @@ pnpm supabase db reset       # apply migrations to a fresh database
 npx expo start --ios         # or scan the QR with Expo Go
 ```
 
-Sign in with any email: the 6-digit code arrives in Mailpit (http://127.0.0.1:54324).
+Locally, make a user in Studio (Authentication → Add user, auto-confirm) and sign in with that email and password.
 On a physical phone, set `EXPO_PUBLIC_SUPABASE_URL` to your Mac's LAN IP instead of 127.0.0.1.
+
+## Live
+
+- App: https://flathub.vercel.app (Vercel, web build). Phones: open it and "Add to Home Screen".
+- Backend: the free Supabase project `odhpvfwvpgwfgqypijnw`.
+- Deploy: `vercel deploy --prod` (builds `expo export --platform web` with the Vercel env vars).
+- Schema changes: `pnpm supabase db push --db-url <connection string>`; confirm first, it's the live database.
+
+### Accounts
+
+Sign-in is name + password. No email is ever sent, because Supabase's free sender only mails project team members.
+Each mate's account is `<name>@flathub.test`; the sign-in screen adds the domain when you type a bare name.
+
+- New mate: Supabase dashboard → Authentication → Add user → email `<name>@flathub.test`, a password, "Auto Confirm User".
+- Forgotten password: Supabase dashboard → SQL editor:
+  ```sql
+  update auth.users set encrypted_password = extensions.crypt('new-password', extensions.gen_salt('bf'))
+  where email = 'ayan@flathub.test';
+  ```
+- Anyone can change their own password in the app: Mates → Change password.
 
 ## Checks
 

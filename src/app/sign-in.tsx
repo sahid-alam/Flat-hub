@@ -1,34 +1,30 @@
-import * as Linking from 'expo-linking';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
 import { DISPLAY, ErrorText, Field, Magnet, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
 
+// Accounts are made for each mate (no sign-up, no email is ever sent), so a bare name is enough.
+// ponytail: name → name@flathub.test; give mates real emails if password resets by email are ever needed
+const toEmail = (login: string) => {
+  const l = login.trim().toLowerCase();
+  return l.includes('@') ? l : `${l}@flathub.test`;
+};
+
 export default function SignIn() {
   const c = usePalette();
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
-  const [code, setCode] = useState('');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(fn: () => Promise<{ error: { message: string } | null }>, after?: () => void) {
+  async function signIn() {
     setBusy(true);
     setError(null);
-    const { error } = await fn();
+    const { error } = await supabase.auth.signInWithPassword({ email: toEmail(login), password });
     setBusy(false);
-    if (error) setError(error.message);
-    else after?.();
+    if (error) setError(error.message === 'Invalid login credentials' ? "That name and password don't match." : error.message);
   }
-
-  const send = () =>
-    run(
-      () =>
-        supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: Linking.createURL('/') } }),
-      () => setSent(true),
-    );
-  const verify = () => run(() => supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' }));
 
   return (
     <Screen>
@@ -45,43 +41,28 @@ export default function SignIn() {
           <T soft>The flat's kitty, on the fridge door.</T>
         </View>
         <Slip>
-          {!sent ? (
-            <>
-              <Field
-                label="Your email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                autoComplete="email"
-                keyboardType="email-address"
-                placeholder="you@example.com"
-                onSubmitEditing={send}
-              />
-              <MagnetButton label={busy ? 'Sending…' : 'Email me a sign-in code'} onPress={send} disabled={busy || !email.includes('@')} />
-            </>
-          ) : (
-            <>
-              <T>
-                Check <T weight="600">{email.trim()}</T>. Open the email on this phone and tap the sign-in link, or type
-                the 6-digit code if the email shows one.
-              </T>
-              <Field
-                label="Code"
-                big
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                autoComplete="one-time-code"
-                maxLength={6}
-                placeholder="000000"
-                onSubmitEditing={verify}
-              />
-              <MagnetButton label={busy ? 'Checking…' : 'Sign in'} onPress={verify} disabled={busy || code.trim().length !== 6} />
-              <MagnetButton label="Use a different email" outline onPress={() => setSent(false)} />
-            </>
-          )}
+          <Field
+            label="Your name"
+            value={login}
+            onChangeText={setLogin}
+            autoCapitalize="none"
+            autoComplete="username"
+            placeholder="sahid"
+          />
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="current-password"
+            onSubmitEditing={signIn}
+          />
+          <MagnetButton label={busy ? 'Signing in…' : 'Sign in'} onPress={signIn} disabled={busy || !login.trim() || !password} />
           <ErrorText error={error} />
         </Slip>
+        <T size={15} soft center>
+          Forgot your password? Ask Sahid to reset it.
+        </T>
       </View>
     </Screen>
   );

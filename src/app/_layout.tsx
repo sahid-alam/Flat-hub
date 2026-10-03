@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { BooksProvider, useBooks } from '@/lib/books';
+import '@/lib/invite'; // captures an invite code from the opening URL before the auth redirect
 import { DISPLAY, usePalette } from '@/ui/kit';
 
 SplashScreen.preventAutoHideAsync();

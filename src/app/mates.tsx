@@ -13,6 +13,9 @@ export default function Mates() {
   const [displayName, setDisplayName] = useState(me.display_name);
   const [vpa, setVpa] = useState(me.upi_vpa ?? '');
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const link = Linking.createURL('/welcome', { queryParams: { code: household.invite_code } });
   const invite = `Join ${household.name} on FlatHub: ${link}\nInvite code: ${household.invite_code}`;
@@ -46,12 +49,16 @@ export default function Mates() {
           {household.invite_code}
         </T>
         <MagnetButton
-          label="Share invite"
+          label={copied ? 'Invite copied' : 'Share invite'}
           color="green"
           icon={{ ios: 'square.and.arrow.up', android: 'share' }}
-          onPress={() =>
-            Platform.OS === 'web' ? navigator.clipboard?.writeText(invite) : Share.share({ message: invite })
-          }
+          onPress={async () => {
+            // phones' browsers have the Web Share sheet; desktop browsers fall back to the clipboard
+            const nav: Partial<Navigator> = Platform.OS === 'web' ? navigator : {};
+            if (Platform.OS !== 'web' || nav.share) return Share.share({ message: invite }).catch(() => {});
+            await nav.clipboard?.writeText(invite);
+            setCopied(true);
+          }}
         />
       </Slip>
 
@@ -91,6 +98,26 @@ export default function Mates() {
         />
         <ErrorText error={error} />
         <MagnetButton label={saved ? 'Saved' : 'Save'} onPress={saveMe} disabled={saved || !displayName.trim()} />
+      </Slip>
+      <Slip>
+        <Field
+          label="New password (at least 8 characters)"
+          value={password}
+          onChangeText={(t) => (setPassword(t), setPasswordSaved(false))}
+          secureTextEntry
+          autoComplete="new-password"
+        />
+        <MagnetButton
+          label={passwordSaved ? 'Password changed' : 'Change password'}
+          disabled={passwordSaved || password.length < 8}
+          onPress={async () => {
+            setError(null);
+            const { error } = await supabase.auth.updateUser({ password });
+            if (error) return setError(error.message);
+            setPassword('');
+            setPasswordSaved(true);
+          }}
+        />
       </Slip>
       <MagnetButton label="Sign out" outline color="tomato" onPress={() => supabase.auth.signOut()} />
     </Screen>

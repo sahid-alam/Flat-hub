@@ -1,10 +1,11 @@
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { useBooks } from '@/lib/books';
 import { newId } from '@/lib/id';
+import { clearInvite, codeOf, savedInvite } from '@/lib/invite';
 import { supabase } from '@/lib/supabase';
 import { Choice, DISPLAY, ErrorText, Field, MagnetButton, Screen, Slip, T } from '@/ui/kit';
 
@@ -12,16 +13,24 @@ import { Choice, DISPLAY, ErrorText, Field, MagnetButton, Screen, Slip, T } from
 export default function Welcome() {
   const { reload } = useBooks();
   const params = useLocalSearchParams<{ code?: string }>();
-  // the invite link that opened the app survives the detour through sign-in
   const opened = Linking.useLinkingURL();
-  const linkCode = opened ? Linking.parse(opened).queryParams?.code : undefined;
-  const invite = params.code ?? (typeof linkCode === 'string' ? linkCode : undefined);
+  const invite = params.code ?? codeOf(opened);
   const [mode, setMode] = useState<'join' | 'create'>(invite ? 'join' : 'create');
   const [name, setName] = useState('');
   const [flat, setFlat] = useState('');
   const [code, setCode] = useState(invite ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // an invite opened before signing in was saved at startup
+  useEffect(() => {
+    if (invite) return;
+    savedInvite().then((saved) => {
+      if (!saved) return;
+      setCode(saved);
+      setMode('join');
+    });
+  }, [invite]);
 
   async function submit() {
     setBusy(true);
@@ -41,7 +50,10 @@ export default function Welcome() {
           });
     setBusy(false);
     if (error) setError(error.code === 'P0002' ? "That invite code doesn't match a flat." : error.message);
-    else await reload();
+    else {
+      await clearInvite();
+      await reload();
+    }
   }
 
   const ok = name.trim() && (mode === 'create' ? flat.trim() : code.trim());
@@ -74,6 +86,7 @@ export default function Welcome() {
           {mode === 'create' && <T size={15} soft>You'll hold the kitty until you hand it to the treasurer.</T>}
           <ErrorText error={error} />
         </Slip>
+        <MagnetButton label="Not you? Sign out" outline onPress={() => supabase.auth.signOut()} />
       </View>
     </Screen>
   );

@@ -88,6 +88,7 @@ The spine is that **one purchase writes a spend (money) and, optionally, lots (s
 | Supabase + RLS on `household_id` | The free tier fits one flat. Realtime is useful for the shopping list. Free projects pause after 7 idle days, so add a keep-alive cron. |
 | Integer paise, append-only ledgers, UUIDv7 | All the money bugs found in the reference repos came from floats or mutable rows. |
 | Pool ledger, not per-expense splits | It matches how the flat actually works; one identity (see DATA_MODEL) replaces the whole split engine. |
+| Web app on Vercel for now, name + password sign-in (2026-10-03) | Free, no domain, works on every phone today. Supabase's free email sender only mails project team members, so magic links can't reach mates; accounts are made per mate instead. Native builds (EAS) come back when share-sheet or push is needed. |
 | LLM extraction + confirm card | Spliit's proven approach. Zepto PDFs and screenshots are messy, so a human confirms every save. |
 | Fees and discounts as separate lines | The spend total equals what was paid, and the item prices stay honest. |
 | Chore assignment by effort deficit, skip ≠ done | Grocy and Donetick both credit skips; the research shows that fairness as perceived is what matters. |
