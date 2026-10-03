@@ -10,6 +10,7 @@ import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { monthLabel, monthOf, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
+import { QuickAdd } from '@/ui/quickadd';
 import {
   DISPLAY,
   ErrorText,
@@ -113,7 +114,15 @@ export default function KittyHome() {
           </View>
         </View>
 
+        <QuickAdd />
+
         <Slip>
+          <Row
+            label="Import Zepto order"
+            icon={{ ios: 'doc.viewfinder', android: 'receipt_long' }}
+            onPress={() => router.push('/import')}
+          />
+          <Rule />
           <Row label="Away" icon={{ ios: 'airplane', android: 'flight' }} onPress={() => router.push('/away')} />
           <Rule />
           <Row
