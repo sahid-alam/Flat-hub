@@ -55,3 +55,4 @@ supabase/.branches
 # design references (local only)
 /font-reference
 /logo-font-reference
+/.claude/worktrees
