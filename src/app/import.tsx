@@ -347,8 +347,8 @@ export default function ImportOrder() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <T weight="600">Check the lines</T>
           {total !== null && (
-            <T size={15} weight="600" color={balanced ? c.green : c.tomato}>
-              {balanced ? 'Adds up' : `${formatINR(linesTotal)} of ${formatINR(total)}`}
+            <T size={15} weight="600" color={ready ? c.green : c.tomato}>
+              {ready ? 'Adds up' : balanced ? 'Check the total' : `${formatINR(linesTotal)} of ${formatINR(total)}`}
             </T>
           )}
         </View>
