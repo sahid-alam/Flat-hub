@@ -22,7 +22,7 @@ spend      (id, household_id, source 'zepto'|'local'|'other', store_name,
             paid_by → member, paid_from 'pool'|'personal',
             total_paise bigint, occurred_at, receipt_path null, extraction jsonb null,
             reverses_id null)
-spend_line (id, household_id, spend_id, product_id null, name, qty numeric(12,3), unit,
+spend_line (id, household_id, spend_id, product_id null → product, name, qty numeric(12,3), unit,
             line_total_paise bigint, kind 'item'|'fee'|'discount')   -- discount is negative
 pool_entry (id, household_id, kind 'contribution'|'reimbursement',
             member_id, amount_paise bigint, occurred_at, note,
@@ -31,7 +31,7 @@ pool_entry (id, household_id, kind 'contribution'|'reimbursement',
 ```
 
 - **Reversal sign:** an original row has a positive amount; its reversal has the **negated** amount, the same kind/member/payer, and `reverses_id` set (one reversal per row). A trigger rejects a reversal that doesn't mirror its target exactly, so every Σ below is a plain sum.
-- Creating a household, joining with an invite code, handing over the kitty, and saving a spend with its lines go through RPCs (`create_household`, `join_household`, `set_pool_holder`, `add_spend`). A deferred constraint trigger enforces invariant 1. Ledgers have no UPDATE/DELETE grants.
+- Creating a household, joining with an invite code, handing over the kitty, and saving a spend with its lines go through RPCs (`create_household`, `join_household`, `set_pool_holder`, `add_spend`). `add_spend` also stores `spend.extraction` (the raw LLM output behind a Zepto import) and each line's `product_id`. A deferred constraint trigger enforces invariant 1. Ledgers have no UPDATE/DELETE grants.
 - Cross-household references are composite FKs on `(household_id, id)`, so a row can't point at another flat's member or spend.
 
 Derived values (views or functions, never stored):
@@ -59,9 +59,10 @@ Derived values (views or functions, never stored):
 ## Stock & fridge
 
 ```
-product       (id, household_id, name, aliases text[],         -- learns Zepto line names
-               base_unit 'g'|'ml'|'pc', track_stock bool, min_qty numeric null,
-               favourite bool, default_price_paise null, category)
+product       (id, household_id, name unique per household (case-insensitive),
+               aliases text[],                                  -- learned Zepto line names, lower(trim)
+               base_unit 'g'|'ml'|'pc' default 'pc', track_stock bool default true, min_qty numeric(12,3) null,
+               favourite bool, default_price_paise bigint null, category null)   -- M2
 product_uom   (product_id, unit, factor_to_base)               -- '1 packet' = 400 g
 lot           (id, household_id, product_id, spend_line_id null,
                location 'fridge'|'freezer'|'pantry', expiry_date null,
@@ -71,6 +72,8 @@ stock_move    (id, lot_id, delta_qty numeric(12,3),             -- in base unit
 shopping_item (id, household_id, product_id null, name, added_by, done_by_spend_line_id null)
 ```
 
+- `product` is household data, not a ledger: members can insert and update it, nobody can delete it (spend lines point at it; unfavourite instead).
+- `learn_alias(product_id, alias)` appends `lower(trim(alias))` to `aliases` once; a repeat, a blank alias or a non-member's call is a no-op. The import screen calls it when a mate confirms a Zepto line → product match.
 - On-hand quantity for a lot is `Σ stock_move.delta_qty`, and a lot is empty when that sum is ≤ 0.
 - Products with `track_stock = false` (same-day dahi, milk, bread) create a spend line but no lot.
 - **FEFO order:** `ORDER BY opened DESC, expiry_date ASC NULLS LAST, received_at ASC`. Warn when an unopened lot expires before an opened one.
