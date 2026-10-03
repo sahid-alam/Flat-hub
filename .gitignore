@@ -51,3 +51,7 @@ supabase/.temp
 supabase/.branches
 .env
 .vercel
+
+# design references (local only)
+/font-reference
+/logo-font-reference
