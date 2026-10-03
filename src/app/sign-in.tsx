@@ -62,7 +62,8 @@ export default function SignIn() {
           ) : (
             <>
               <T>
-                We sent a 6-digit code and a sign-in link to <T weight="600">{email.trim()}</T>.
+                Check <T weight="600">{email.trim()}</T>. Open the email on this phone and tap the sign-in link, or type
+                the 6-digit code if the email shows one.
               </T>
               <Field
                 label="Code"
