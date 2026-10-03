@@ -10,7 +10,7 @@ import { matchProduct, normalizeExtraction, normalizeName, type Extraction } fro
 import { linesBalance } from '@/domain/kitty';
 import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
-import { extractSpend } from '@/lib/extract';
+import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
@@ -27,10 +27,6 @@ type Draft = {
   date: string;
   lines: Line[];
 };
-type Input =
-  | { type: 'image'; media_type: 'image/jpeg' | 'image/png' | 'image/webp'; data: string }
-  | { type: 'pdf'; data: string }
-  | { type: 'text'; text: string };
 
 const rupees = (paise: number) => String(Math.abs(paise) / 100); // display only; parsed back with parseRupees
 const stripDataUrl = (s: string) => s.replace(/^data:[^,]*,/, '');
@@ -63,7 +59,7 @@ export default function ImportOrder() {
 
   const match = (name: string, kind: Kind) => (kind === 'item' ? (matchProduct(name, products)?.id ?? null) : null);
 
-  async function read(get: () => Promise<Input | null>) {
+  async function read(get: () => Promise<ExtractInput | null>) {
     setReadError(null);
     setError(null);
     try {
@@ -218,7 +214,8 @@ export default function ImportOrder() {
         occurred_at: draft.date === today() ? null : dateToTimestamp(draft.date),
         extraction: draft.raw,
       },
-      p_lines: parsed.map((l) => ({
+      // a ₹0 fee or discount means nothing, and the DB rejects a ₹0 discount
+      p_lines: parsed.filter((l) => l.kind === 'item' || l.paise !== 0).map((l) => ({
         id: l.id,
         name: l.name.trim(),
         qty: l.qty,
