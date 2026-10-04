@@ -6,11 +6,10 @@ import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
 import { confirm, dayLabel, monthLabel, thisMonth, today } from '@/lib/util';
-import { DateField, ErrorText, Heading, MagnetButton, Position, Rule, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { Block, Chip, DateField, ErrorText, MagnetButton, Position, Rule, Screen, SectionLabel, T } from '@/ui/kit';
 
-/** Log an absence, and see where every mate stands. Names in flat order: no ranking. */
+/** Log an absence, and see where every mate stands. Names in alphabetical order: no ranking. */
 export default function Away() {
-  const c = usePalette();
   const { me, members, absences, household, books, name, reload } = useHousehold();
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
@@ -19,6 +18,7 @@ export default function Away() {
   const month = thisMonth();
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
   const w = presenceWeights(month, books.members, books.absences);
+  const mates = [...members].sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   async function save() {
     setBusy(true);
@@ -36,10 +36,8 @@ export default function Away() {
 
   return (
     <Screen>
-      <Slip magnet="blue">
-        <T size={20} weight="700">
-          I'm away
-        </T>
+      <Block>
+        <SectionLabel>I'm away</SectionLabel>
         <DateField label="From" value={from} onChange={(d) => (setFrom(d), d > to && setTo(d))} />
         <DateField label="To" value={to} onChange={setTo} />
         <T size={15} soft>
@@ -50,65 +48,73 @@ export default function Away() {
               : `${days} day${days > 1 ? 's' : ''}: trips under 3 days don't change shares (back-to-back entries add up).`}
         </T>
         <ErrorText error={error} />
-        <MagnetButton label={busy ? 'Saving…' : 'Log my absence'} color="blue" disabled={busy || days < 1} onPress={save} />
-      </Slip>
+        <MagnetButton label={busy ? 'Saving…' : 'Log my absence'} color="brass" disabled={busy || days < 1} onPress={save} />
+      </Block>
 
-      <Heading>Where everyone stands</Heading>
-      <Slip>
-        {members.map((m, i) => (
-          <View key={m.id}>
-            {i > 0 && <Rule />}
-            <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <T weight="600">{m.id === me.id ? `${m.display_name} (me)` : m.display_name}</T>
-                <T size={15} soft>
-                  {w[m.id] ?? 0} days in {monthLabel(month)}
-                </T>
-              </View>
-              <Position paise={position(books, m.id)} />
-            </View>
-          </View>
-        ))}
-        <T size={13} soft>
-          + means the kitty owes them; − is what their next top-up covers.
-        </T>
-      </Slip>
-
-      <Heading>Absences</Heading>
-      {absences.length === 0 ? (
-        <T soft>No one's logged an absence.</T>
-      ) : (
-        <Slip>
-          {absences.map((a, i) => (
-            <View key={a.id}>
+      <Block>
+        <SectionLabel>Where everyone stands</SectionLabel>
+        <View>
+          {mates.map((m, i) => (
+            <View key={m.id}>
               {i > 0 && <Rule />}
-              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12, paddingVertical: 6 }}>
                 <View style={{ flex: 1 }}>
-                  <T weight="600">{name(a.member_id)}</T>
-                  <T size={15} soft>
-                    {dayLabel(a.from_date)} – {dayLabel(a.to_date)}
-                    {addedLate(a) ? ` · added late (${dayLabel(istDate(a.created_at))})` : ''}
+                  <T weight="600">{m.id === me.id ? `${m.display_name} (me)` : m.display_name}</T>
+                  <T size={13} soft>
+                    {w[m.id] ?? 0} days in {monthLabel(month)}
                   </T>
                 </View>
-                {a.member_id === me.id && (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={async () => {
-                      if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
-                      await supabase.from('member_absence').delete().eq('id', a.id);
-                      reload();
-                    }}
-                    style={{ minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'flex-end' }}>
-                    <T size={15} weight="600" color={c.tomato}>
-                      Remove
-                    </T>
-                  </Pressable>
-                )}
+                <Position paise={position(books, m.id)} size={20} />
               </View>
             </View>
           ))}
-        </Slip>
-      )}
+        </View>
+        <T size={13} soft>
+          + is what they get back from the kitty; − is covered by their next top-up.
+        </T>
+      </Block>
+
+      <Block>
+        <SectionLabel>Absences</SectionLabel>
+        {absences.length === 0 ? (
+          <T soft>No one's logged an absence.</T>
+        ) : (
+          <View>
+            {absences.map((a, i) => (
+              <View key={a.id}>
+                {i > 0 && <Rule />}
+                <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12, paddingVertical: 6 }}>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <T weight="600">{name(a.member_id)}</T>
+                    <T size={15} soft>
+                      {dayLabel(a.from_date)} – {dayLabel(a.to_date)}
+                    </T>
+                    {addedLate(a) && <Chip kind="late" label={`added late · ${dayLabel(istDate(a.created_at))}`} />}
+                  </View>
+                  {a.member_id === me.id && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove absence ${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`}
+                      onPress={async () => {
+                        if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
+                        await supabase.from('member_absence').delete().eq('id', a.id);
+                        reload();
+                      }}
+                      style={({ pressed }) => [
+                        { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'flex-end' },
+                        pressed && { opacity: 0.6 },
+                      ]}>
+                      <T size={15} weight="700" style={{ textDecorationLine: 'underline' }}>
+                        Remove
+                      </T>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </Block>
     </Screen>
   );
 }

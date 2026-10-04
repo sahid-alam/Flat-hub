@@ -5,7 +5,7 @@ import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
-import { Choice, ErrorText, Field, Heading, MagnetButton, Row, Rule, Slip, StarToggle, Screen, T } from '@/ui/kit';
+import { Block, Choice, ErrorText, Field, MagnetButton, Row, Rule, Screen, SectionLabel, StarToggle, T } from '@/ui/kit';
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
 
@@ -25,12 +25,12 @@ export default function Favourites() {
     <Screen>
       <AddProduct householdId={household.id} names={products.map((p) => p.name.toLowerCase())} onAdded={reload} />
 
-      <Heading>Things we buy</Heading>
       <ErrorText error={error} />
       {products.length === 0 ? (
         <T soft>Nothing yet. Add milk, bread, eggs, whatever goes in the cart every week.</T>
       ) : (
-        <Slip>
+        <Block>
+          <SectionLabel>Things we buy · ★ shows in quick add</SectionLabel>
           {products.map((p, i) => (
             <View key={p.id} style={{ gap: 12 }}>
               {i > 0 && <Rule />}
@@ -51,7 +51,7 @@ export default function Favourites() {
               {editing === p.id && <EditPrice key={p.id} product={p} onDone={() => setEditing(null)} />}
             </View>
           ))}
-        </Slip>
+        </Block>
       )}
     </Screen>
   );
@@ -134,8 +134,9 @@ function AddProduct({ householdId, names, onAdded }: { householdId: string; name
   }
 
   return (
-    <Slip magnet="orange">
-      <Field label="Add a product" value={name} onChangeText={setName} placeholder="Amul Taaza 500 ml" maxLength={80} />
+    <Block>
+      <SectionLabel>Add a product</SectionLabel>
+      <Field label="Name" value={name} onChangeText={setName} placeholder="Amul Taaza 500 ml" maxLength={80} />
       <Field label="Usual price (₹, optional)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholder="29" />
       <View style={{ gap: 8 }}>
         <T size={15} weight="600" soft>
@@ -154,11 +155,11 @@ function AddProduct({ householdId, names, onAdded }: { householdId: string; name
       <ErrorText error={error} />
       <MagnetButton
         label={busy ? 'Adding…' : 'Add'}
-        color="orange"
+        color="brass"
         icon={{ ios: 'plus', android: 'add' }}
         disabled={busy || !trimmed || !priceOk || dup}
         onPress={add}
       />
-    </Slip>
+    </Block>
   );
 }

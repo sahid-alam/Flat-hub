@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
-import { DISPLAY, ErrorText, Field, Magnet, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { Block, ErrorText, Field, Logo, MagnetButton, Screen, T } from '@/ui/kit';
 
 // Accounts are made for each mate (no sign-up, no email is ever sent), so a bare name is enough.
 // ponytail: name → name@flathub.test; give mates real emails if password resets by email are ever needed
@@ -12,7 +12,6 @@ const toEmail = (login: string) => {
 };
 
 export default function SignIn() {
-  const c = usePalette();
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,18 +28,11 @@ export default function SignIn() {
   return (
     <Screen>
       <View style={{ flex: 1, justifyContent: 'center', gap: 28 }}>
-        <View style={{ gap: 6 }}>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Magnet color={c.green} />
-            <Magnet color={c.tomato} />
-            <Magnet color={c.blue} />
-          </View>
-          <T size={44} style={{ fontFamily: DISPLAY, lineHeight: 52 }}>
-            FlatHub
-          </T>
-          <T soft>The flat's kitty, on the fridge door.</T>
+        <View style={{ gap: 14 }}>
+          <Logo size={76} />
+          <T soft>The flat's kitty, groceries and duties.</T>
         </View>
-        <Slip>
+        <Block>
           <Field
             label="Your name"
             value={login}
@@ -59,7 +51,7 @@ export default function SignIn() {
           />
           <MagnetButton label={busy ? 'Signing in…' : 'Sign in'} onPress={signIn} disabled={busy || !login.trim() || !password} />
           <ErrorText error={error} />
-        </Slip>
+        </Block>
         <T size={15} soft center>
           Forgot your password? Ask Sahid to reset it.
         </T>
