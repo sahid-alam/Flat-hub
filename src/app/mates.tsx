@@ -42,7 +42,7 @@ export default function Mates() {
     <Screen>
       <Block>
         <SectionLabel>Invite a mate</SectionLabel>
-        <T soft>Send this on the flat's WhatsApp group. They sign in with their email, then tap the link or paste the code.</T>
+        <T soft>Send this on the flat's WhatsApp group. Once they have a name and password, they open the link or paste the code.</T>
         <T size={28} weight="700" style={{ letterSpacing: 3 }}>
           {household.invite_code}
         </T>
