@@ -102,9 +102,9 @@ export function presenceWeights(month: string, members: Member[], absences: Abse
 }
 
 /** A reversal is anchored to its target, so it lands in the month its share was allocated in. */
-function anchors<S extends Spend>(spends: S[]): (s: S) => S {
-  const byId = new Map(spends.map((s) => [s.id, s]));
-  return (s) => (s.reverses_id ? (byId.get(s.reverses_id) ?? s) : s);
+export function anchors<R extends { id: string; reverses_id: string | null }>(rows: R[]): (r: R) => R {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return (r) => (r.reverses_id ? (byId.get(r.reverses_id) ?? r) : r);
 }
 
 /** Spend per IST month; a reversal counts in its target's month so it nets to zero. */
@@ -190,7 +190,7 @@ const SOURCES: NonNullable<Spend['source']>[] = ['zepto', 'local', 'other'];
 /**
  * Where a month's money went: by store source and by product category, plus pool vs own pocket.
  * Lines and products ride on Books; without them everything falls under 'Other'.
- * A reversal carries its target's lines negated, so it nets out of both breakdowns.
+ * A reversal is read as its target's lines negated, so it nets out of both breakdowns.
  */
 export function monthBreakdown(b: Books, month: string) {
   const anchor = anchors(b.spends);
@@ -208,9 +208,11 @@ export function monthBreakdown(b: Books, month: string) {
   const linesOf = (id: string) => (b.lines ?? []).filter((l) => l.spend_id === id);
   const cats = new Map<string, number>();
   for (const s of mine) {
-    const own = linesOf(s.id);
-    // a reversal usually has no lines of its own: reverse the target's
-    const lines = own.length || !s.reverses_id ? own : linesOf(s.reverses_id).map((l) => ({ ...l, line_total_paise: -l.line_total_paise }));
+    // a reversal always mirrors the target's lines negated: its own would move a frozen month's
+    // categories while the total still netted to zero
+    const lines = s.reverses_id
+      ? linesOf(s.reverses_id).map((l) => ({ ...l, line_total_paise: -l.line_total_paise }))
+      : linesOf(s.id);
     const add = (key: string, paise: number) => cats.set(key, (cats.get(key) ?? 0) + paise);
     if (lines.length === 0) add('Other', s.total_paise); // unitemised: the whole spend
     else {

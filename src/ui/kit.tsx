@@ -168,7 +168,7 @@ export function Block({
   const c = usePalette();
   const filled = FILLED.includes(tone);
   const ink = filled ? { ink: block.onyx, muted: block.onyxMuted } : { ink: c.ink, muted: c.muted };
-  const box = [s.block, { backgroundColor: c[tone], borderColor: tone === 'surface' ? c.edge : 'transparent' }];
+  const box = [s.block, { backgroundColor: c[tone], borderColor: filled ? 'transparent' : c.edge }];
   return (
     <InkContext.Provider value={ink}>
       {onPress ? (
@@ -486,7 +486,8 @@ export function MonthCard({
 }) {
   const [width, setWidth] = useState(358);
   const name = month.toUpperCase();
-  const fs = Math.min(120, Math.floor((width - 24) / (MONTH_EM[name] ?? name.length * 0.62)));
+  // 56 = 2 x the 26px corner radius: the longest name must not run into the arcs
+  const fs = Math.min(120, Math.floor((width - 56) / (MONTH_EM[name] ?? name.length * 0.62)));
   return (
     <Block
       tone={tone}
@@ -495,9 +496,12 @@ export function MonthCard({
       style={{ height, padding: 14, overflow: 'hidden', borderRadius: 26 }}>
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width + 28)} style={s.monthTop}>
         <Pill label={pill} />
-        <T size={13} weight="600" style={{ paddingTop: 7 }}>
-          {status}
-        </T>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: 5 }}>
+          {status === 'closed' && <Icon name={{ ios: 'lock', android: 'lock' }} size={14} />}
+          <T size={15} weight="700">
+            {status}
+          </T>
+        </View>
       </View>
       <MonthName name={name} size={fs} />
     </Block>

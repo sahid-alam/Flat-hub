@@ -1,26 +1,30 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { addedLate, istDate, position, presenceWeights } from '@/domain/kitty';
+import { addedLate, isClosed, istDate, position, presenceWeights } from '@/domain/kitty';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
 import { confirm, dayLabel, monthLabel, sayError, thisMonth, today } from '@/lib/util';
-import { Block, Chip, DateField, ErrorText, MagnetButton, Position, Rule, Screen, SectionLabel, T } from '@/ui/kit';
+import { Block, Chip, DateField, ErrorText, MagnetButton, Position, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 /** Log an absence, and see where every mate stands. Names in alphabetical order: no ranking. */
 export default function Away() {
-  const { me, members, absences, household, books, name, holder, reload } = useHousehold();
+  const c = usePalette();
+  const { me, members, absences, household, books, closes, name, holder, reload } = useHousehold();
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // the Remove buttons sit a screenful below the form, so their refusal needs its own slot down there
-  const [removeError, setRemoveError] = useState<string | null>(null);
+  // a refusal belongs in the row that was tapped, not at the top of a block that may be scrolled past
+  const [removeError, setRemoveError] = useState<{ id: string; message: string } | null>(null);
   const month = thisMonth();
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
   const w = presenceWeights(month, books.members, books.absences);
   const mates = [...members].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  // both ends: an absence can straddle 28 Sep - 3 Oct. A closed month refuses the delete, so don't offer it.
+  const frozen = (a: { from_date: string; to_date: string }) =>
+    isClosed(a.from_date.slice(0, 7), closes ?? []) || isClosed(a.to_date.slice(0, 7), closes ?? []);
 
   async function save() {
     setBusy(true);
@@ -78,7 +82,6 @@ export default function Away() {
 
       <Block>
         <SectionLabel>Absences</SectionLabel>
-        <ErrorText error={removeError} />
         {absences.length === 0 ? (
           <T soft>No one's logged an absence.</T>
         ) : (
@@ -94,28 +97,37 @@ export default function Away() {
                     </T>
                     {addedLate(a) && <Chip kind="late" label={`added late · ${dayLabel(istDate(a.created_at))}`} />}
                   </View>
-                  {a.member_id === me.id && (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove absence ${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`}
-                      onPress={async () => {
-                        if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
-                        setRemoveError(null);
-                        // a closed month refuses the delete: say so, or the row would just sit there
-                        const { error } = await supabase.from('member_absence').delete().eq('id', a.id);
-                        if (error) return setRemoveError(sayError(error, holder?.display_name));
-                        reload();
-                      }}
-                      style={({ pressed }) => [
-                        { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'flex-end' },
-                        pressed && { opacity: 0.6 },
-                      ]}>
-                      <T size={15} weight="700" style={{ textDecorationLine: 'underline' }}>
-                        Remove
-                      </T>
-                    </Pressable>
-                  )}
+                  {a.member_id === me.id &&
+                    (frozen(a) ? (
+                      <Chip kind="late" label="closed" />
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove absence ${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`}
+                        onPress={async () => {
+                          if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
+                          setRemoveError(null);
+                          // the backstop for a race: the month was closed between the render and the tap
+                          const { error } = await supabase.from('member_absence').delete().eq('id', a.id);
+                          if (error) return setRemoveError({ id: a.id, message: sayError(error, holder?.display_name) });
+                          reload();
+                        }}
+                        style={({ pressed }) => [{ minHeight: 48, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
+                        <View style={{ borderWidth: 1, borderColor: c.line, borderRadius: 9999, paddingHorizontal: 16, paddingVertical: 9 }}>
+                          <T size={15} weight="700">
+                            Remove
+                          </T>
+                        </View>
+                      </Pressable>
+                    ))}
                 </View>
+                {removeError?.id === a.id && (
+                  <View role="status" style={{ backgroundColor: c.warnBg, borderRadius: 14, padding: 10, marginBottom: 8 }}>
+                    <T size={13} weight="600" color={c.warnFg}>
+                      {removeError.message}
+                    </T>
+                  </View>
+                )}
               </View>
             ))}
           </View>

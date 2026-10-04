@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
 import { addedLate, istDate, monthBreakdown, presenceWeights, shares } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
@@ -14,14 +14,13 @@ import {
   ErrorText,
   Hero,
   Icon,
+  MagnetButton,
   MonthCard,
   Rule,
   Screen,
   SectionLabel,
   T,
   usePalette,
-  type BlockTone,
-  type Palette,
 } from '@/ui/kit';
 import { daysIn, monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
 
@@ -41,14 +40,13 @@ export default function MonthStatement() {
 const DAYS_W = 76;
 const SHARE_W = 100;
 
-const SOURCE: Record<'zepto' | 'local' | 'other', { label: string; tone: BlockTone }> = {
-  zepto: { label: 'Zepto', tone: 'stone' },
-  local: { label: 'Local', tone: 'raised' },
-  other: { label: 'Other', tone: 'surface' },
+/** All three tiles share one fill: in light, `stone` and `raised` are the same beige, so a fill
+ * difference implied an emphasis you couldn't see. The bar below carries it, in both modes. */
+const SOURCE: Record<'zepto' | 'local' | 'other', { label: string; bar: 'accent' | 'line' | 'muted' }> = {
+  zepto: { label: 'Zepto', bar: 'accent' },
+  local: { label: 'Local', bar: 'line' },
+  other: { label: 'Other', bar: 'muted' },
 };
-/** Block fills don't work as bars: the card steps are too close to the block, and `stone` is byte-identical
- * to light's `hair`, so a stone bar vanishes. These three fill tokens carry in both modes. */
-const barOf = (c: Palette, tone: BlockTone) => (tone === 'stone' ? c.accent : tone === 'raised' ? c.line : c.muted);
 
 function Detail({ month }: { month: string }) {
   const c = usePalette();
@@ -87,7 +85,7 @@ function Detail({ month }: { month: string }) {
               {split.map((s) => (
                 <Block
                   key={s.source}
-                  tone={s.tone}
+                  tone="raised"
                   accessibilityLabel={`${s.label} ${formatINR(s.paise)}, ${s.pct} percent`}
                   style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 20, gap: 2 }}>
                   <T size={13} weight="700">
@@ -104,7 +102,7 @@ function Detail({ month }: { month: string }) {
             </View>
             <View aria-hidden style={{ flexDirection: 'row', gap: 3, height: 12 }}>
               {split.map((s) => (
-                <View key={s.source} style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: barOf(c, s.tone) }} />
+                <View key={s.source} style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: c[s.bar] }} />
               ))}
             </View>
           </>
@@ -133,7 +131,7 @@ function Detail({ month }: { month: string }) {
             </View>
           ))}
           <T size={13} soft>
-            By the category of each line's product; anything unitemised or uncategorised is Other.
+            By each product's current category; anything unitemised or uncategorised is Other.
           </T>
         </Block>
       )}
@@ -262,11 +260,12 @@ function Reopen({ month, householdId, onReopened }: { month: string; householdId
   const full = `${monthName(month)} ${month.slice(0, 4)}`;
 
   return (
-    <View style={{ alignItems: 'center', gap: 6 }}>
+    <View style={{ alignSelf: 'stretch', gap: 6 }}>
       <ErrorText error={error} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Reopen ${full}`}
+      <MagnetButton
+        label={busy ? 'Reopening…' : `Reopen ${monthName(month)}`}
+        icon={{ ios: 'lock.open', android: 'lock_open' }}
+        outline
         disabled={busy}
         onPress={async () => {
           if (!(await confirm(`Reopen ${full}?`, `Absences, spends and top-ups dated in ${monthName(month)} can be added and removed again, so shares everyone has already settled up on can change.`, 'Reopen'))) return;
@@ -277,11 +276,7 @@ function Reopen({ month, householdId, onReopened }: { month: string; householdId
           else await onReopened();
           setBusy(false);
         }}
-        style={({ pressed }) => [{ minHeight: 48, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
-        <T size={15} weight="700" soft style={{ textDecorationLine: 'underline' }}>
-          {busy ? 'Reopening…' : `Reopen ${monthName(month)}`}
-        </T>
-      </Pressable>
+      />
     </View>
   );
 }

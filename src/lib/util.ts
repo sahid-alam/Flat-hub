@@ -20,7 +20,8 @@ export const dateToTimestamp = (date: string): string => `${date}T12:00:00+05:30
 
 /** Confirm a destructive-ish action. RN-web's Alert has no buttons, so web uses window.confirm. */
 export function confirm(title: string, message: string, action: string): Promise<boolean> {
-  if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  // the browser's dialog always says OK, so the verb goes into the text it does show
+  if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}\n\nOK = ${action}.`));
   return new Promise((resolve) =>
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },

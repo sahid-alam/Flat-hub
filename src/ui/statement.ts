@@ -1,4 +1,4 @@
-import { isClosed, type Close } from '@/domain/kitty';
+import { anchors, isClosed, type Close } from '@/domain/kitty';
 import type { EntryRow, SpendRow } from '@/lib/books';
 import { monthOf, thisMonth } from '@/lib/util';
 import type { BlockTone } from '@/ui/kit';
@@ -11,10 +11,10 @@ export const monthName = (month: string): string => MONTH_NAMES[Number(month.sli
 
 /** A month's spends and pool entries. A reversal belongs to its target's month, exactly as the share maths allocates it. */
 export function monthRows(spends: SpendRow[], entries: EntryRow[], month: string) {
-  const byId = new Map(spends.map((s) => [s.id, s]));
-  const anchor = (s: SpendRow) => monthOf((s.reverses_id ? (byId.get(s.reverses_id) ?? s) : s).occurred_at);
-  const monthSpends = spends.filter((s) => anchor(s) === month);
-  const monthEntries = entries.filter((e) => monthOf(e.occurred_at) === month);
+  const spendAnchor = anchors(spends);
+  const entryAnchor = anchors(entries);
+  const monthSpends = spends.filter((s) => monthOf(spendAnchor(s).occurred_at) === month);
+  const monthEntries = entries.filter((e) => monthOf(entryAnchor(e).occurred_at) === month);
   return { monthSpends, monthEntries, spent: monthSpends.reduce((a, s) => a + s.total_paise, 0) };
 }
 

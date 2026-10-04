@@ -252,6 +252,19 @@ test('monthBreakdown: a reversal nets out of its target month, by source and by 
     { category: 'Dairy', paise: 6_000, pct: 60 },
     { category: 'Other', paise: 4_000, pct: 40 },
   ]);
+  // a reversal carrying lines of its own is still read as its target's, negated: nothing the
+  // reversal claims can move a frozen month's categories
+  const sneaky = monthBreakdown(
+    {
+      ...b,
+      spends: [...b.spends, rev],
+      lines: [...lines, { spend_id: 's2r', line_total_paise: -5_000, product_id: 'p-rice' }],
+      products: [{ id: 'p-milk', category: 'Dairy' }, { id: 'p-rice', category: 'Grains' }],
+    },
+    '2026-09',
+  );
+  assert.deepEqual(sneaky.byCategory, after.byCategory);
+
   // a discount line nets negative: it reads 0% and the positive categories still share exactly 100
   const disc: Books = {
     ...b,
