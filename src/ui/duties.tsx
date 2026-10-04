@@ -9,8 +9,8 @@ import { today } from '@/lib/util';
 
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/** "Every day", "Every 3 days", "Mon, Thu". */
-export function cadenceLabel(d: Duty): string {
+/** "Every day", "Every 3 days", "Mon, Thu". Takes the two cadence columns, so a half-filled form can ask too. */
+export function cadenceLabel(d: Pick<Duty, 'weekdays' | 'every_days'>): string {
   if (d.weekdays) {
     if (d.weekdays.length === 7) return 'Every day';
     return d.weekdays.length ? [...d.weekdays].sort().map((n) => WD[n]).join(', ') : 'No day picked';

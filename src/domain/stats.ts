@@ -103,3 +103,15 @@ export function periodBreakdown(b: Books, months: string[]) {
     total: sum(parts.map((p) => p.total)),
   };
 }
+
+/**
+ * The two windows the Spending screen needs. `months` is what every figure on it is counted over;
+ * `chartMonths` is what the bar strip draws — the last six months as well, so a single selected
+ * month still has neighbours to be read against. The selected bars are `months` within it.
+ */
+export function spendingWindow(period: Period, nowIso: string, spends: Spend[]) {
+  const months = periodMonths(period, nowIso, spends);
+  // the period can reach past the spends ('last month' on a flat whose first spend is this month)
+  const chartMonths = [...new Set([...periodMonths('all', nowIso, spends).slice(-6), ...months])].sort();
+  return { months, chartMonths };
+}

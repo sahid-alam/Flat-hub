@@ -1,7 +1,7 @@
 // Add and edit the flat's duties. A duty is household data, not a ledger: members may insert and
 // update it. Nobody can delete one — retiring sets active = false, so the history keeps pointing
 // at something. See docs/DATA_MODEL.md ("Duties").
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { useHousehold, type DutyRow } from '@/lib/books';
@@ -213,72 +213,96 @@ function DutyForm({
         ? 'Pick the mate'
         : null;
 
+  // Each answer reads back as words on its own row, so the duty reads as a sentence with the form
+  // folded away. One section is open at a time; the controls inside are the shipped ones.
+  const [open, setOpen] = useState<Section | null>(null);
+  const toggle = (s: Section) => setOpen(open === s ? null : s);
+  const cadenceWords =
+    mode === 'weekdays'
+      ? weekdays.length
+        ? cadenceLabel({ weekdays: [...weekdays].sort(), every_days: null })
+        : 'Pick the days'
+      : cadenceOk
+        ? cadenceLabel({ weekdays: null, every_days: n })
+        : '1 to 90 days';
+  const turnWords =
+    schedule === 'rolling'
+      ? 'Rolling — whoever is furthest behind'
+      : `Always ${mates.find((m) => m.value === fixed)?.label ?? 'one mate'}`;
+
   return (
     <Block>
       <SectionLabel>{duty ? `Edit ${duty.name}` : 'Add a duty'}</SectionLabel>
       <Field label="Name" value={text} onChangeText={setText} placeholder="e.g. Terrace sweep" maxLength={60} />
 
-      <T size={15} weight="600" soft>
-        Effort points
-      </T>
-      <Choice options={POINTS.map((p) => ({ value: p, label: p }))} value={points} onChange={setPoints} />
-
-      <T size={15} weight="600" soft>
-        How often
-      </T>
-      <Choice
-        options={[
-          { value: 'weekdays' as const, label: 'On weekdays' },
-          { value: 'days' as const, label: 'Every N days' },
-        ]}
-        value={mode}
-        onChange={setMode}
-      />
-      {mode === 'weekdays' ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {WD.map((label, i) => (
-            <Day
-              key={label}
-              label={label}
-              on={weekdays.includes(i)}
-              onPress={() => setWeekdays(weekdays.includes(i) ? weekdays.filter((w) => w !== i) : [...weekdays, i])}
-            />
-          ))}
-        </View>
-      ) : (
-        <Field
-          label="Every how many days? (1–90)"
-          value={everyDays}
-          onChangeText={setEveryDays}
-          keyboardType="number-pad"
-          maxLength={2}
+      <Disclosure question="How often is this chore?" answer={cadenceWords} open={open === 'cadence'} onPress={() => toggle('cadence')}>
+        <Choice
+          options={[
+            { value: 'weekdays' as const, label: 'On weekdays' },
+            { value: 'days' as const, label: 'Every N days' },
+          ]}
+          value={mode}
+          onChange={setMode}
         />
-      )}
+        {mode === 'weekdays' ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {WD.map((label, i) => (
+              <Day
+                key={label}
+                label={label}
+                on={weekdays.includes(i)}
+                onPress={() => setWeekdays(weekdays.includes(i) ? weekdays.filter((w) => w !== i) : [...weekdays, i])}
+              />
+            ))}
+          </View>
+        ) : (
+          <Field
+            label="Every how many days? (1–90)"
+            value={everyDays}
+            onChangeText={setEveryDays}
+            keyboardType="number-pad"
+            maxLength={2}
+          />
+        )}
+      </Disclosure>
 
-      <T size={15} weight="600" soft>
-        Whose turn
-      </T>
-      <Choice
-        options={[
-          { value: 'rolling' as const, label: 'Rolling' },
-          { value: 'fixed' as const, label: 'Always one mate' },
-        ]}
-        value={schedule}
-        onChange={setSchedule}
-      />
-      {schedule === 'fixed' && <Choice options={mates} value={fixed} onChange={setFixed} />}
+      <Disclosure
+        question="Worth how much?"
+        answer={`${points} effort ${points === '1' ? 'point' : 'points'}`}
+        open={open === 'points'}
+        onPress={() => toggle('points')}>
+        <Choice options={POINTS.map((p) => ({ value: p, label: p }))} value={points} onChange={setPoints} />
+        <T size={13} soft>
+          A heavier chore is worth more, so one bathroom clean can balance three bin runs.
+        </T>
+      </Disclosure>
 
-      <T size={15} weight="600" soft>
-        Status
-      </T>
-      <Choice
-        options={[
-          { value: 'active' as const, label: 'Active' },
-          { value: 'retired' as const, label: 'Retired' },
-        ]}
-        value={active ? 'active' : 'retired'}
-        onChange={(v) => setActive(v === 'active')}
-      />
+      <Disclosure question="Whose turn is it?" answer={turnWords} open={open === 'turn'} onPress={() => toggle('turn')}>
+        <Choice
+          options={[
+            { value: 'rolling' as const, label: 'Rolling' },
+            { value: 'fixed' as const, label: 'Always one mate' },
+          ]}
+          value={schedule}
+          onChange={setSchedule}
+        />
+        {schedule === 'fixed' && <Choice options={mates} value={fixed} onChange={setFixed} />}
+      </Disclosure>
+
+      <Disclosure
+        question="Is it still on?"
+        answer={active ? 'Active' : 'Retired'}
+        open={open === 'status'}
+        onPress={() => toggle('status')}>
+        <Choice
+          options={[
+            { value: 'active' as const, label: 'Active' },
+            { value: 'retired' as const, label: 'Retired' },
+          ]}
+          value={active ? 'active' : 'retired'}
+          onChange={(v) => setActive(v === 'active')}
+        />
+      </Disclosure>
 
       <T size={13} soft>
         {schedule === 'rolling'
@@ -309,6 +333,58 @@ function DutyForm({
       />
       {duty && <MagnetButton label="Cancel" outline onPress={onCancel} />}
     </Block>
+  );
+}
+
+type Section = 'cadence' | 'points' | 'turn' | 'status';
+
+/**
+ * One question of the duty, with its current answer in words and the controls folded underneath.
+ * kit's Row has no expanded state and this is the only screen that asks questions this way, so it
+ * lives here rather than in the kit.
+ */
+function Disclosure({
+  question,
+  answer,
+  open,
+  onPress,
+  children,
+}: {
+  question: string;
+  answer: string;
+  open: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  const c = usePalette();
+  return (
+    <View style={{ gap: 12 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${question} ${answer}`}
+        onPress={onPress}
+        style={({ pressed }) => [
+          { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12 },
+          pressed && { opacity: 0.6 },
+        ]}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <T size={17} weight="600">
+            {question}
+          </T>
+          <T size={15} soft numberOfLines={1}>
+            {answer}
+          </T>
+        </View>
+        <Icon
+          name={open ? { ios: 'chevron.down', android: 'expand_more' } : { ios: 'chevron.right', android: 'chevron_right' }}
+          size={14}
+          color={c.muted}
+        />
+      </Pressable>
+      {open && <View style={{ gap: 12, paddingBottom: 4 }}>{children}</View>}
+      <Rule />
+    </View>
   );
 }
 

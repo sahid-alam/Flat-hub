@@ -45,8 +45,8 @@ export default function Statements() {
   );
 }
 
-/** The treasurer's close action, on the oldest month that is over and still open. */
-function CloseMonth({ month, householdId, onClosed }: { month: string; householdId: string; onClosed: () => Promise<void> }) {
+/** The treasurer's close action, on the oldest month that is over and still open. Also on /spending, which is where the archive now lives. */
+export function CloseMonth({ month, householdId, onClosed }: { month: string; householdId: string; onClosed: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const short = monthName(month);
