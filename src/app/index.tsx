@@ -70,7 +70,9 @@ export default function KittyHome() {
   const dutyDetail = nextTurn
     ? `${nextTurn.duty.name} · ${myTurn ? 'yours' : nextTurn.memberId ? h.name(nextTurn.memberId).split(' ')[0] : 'nobody free'}` +
       (openToday.length > 1 ? ` · ${openToday.length} due` : '')
-    : 'none';
+    : h.todays.length
+      ? 'all done'
+      : 'none';
 
   const month = thisMonth();
   const inMonth = (iso: string) => monthOf(iso) === month;

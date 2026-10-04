@@ -23,13 +23,15 @@ export default function ManageDuties() {
   const mates = members.filter((m) => !m.left_on);
   const ordered = [...duties.filter((d) => d.active), ...duties.filter((d) => !d.active)];
 
-  async function save(payload: Payload) {
+  /** `id` names the row to update; null adds one. Restore passes the row it sits on, not whatever
+   *  the form happens to be editing. */
+  async function save(payload: Payload, id: string | null) {
     setBusy(true);
     setError(null);
     try {
-      if (editing) {
+      if (id) {
         // Exactly the seven granted columns: anything else is a column-level permission denied.
-        const { error: e } = await supabase.from('duty').update(payload).eq('id', editing.id);
+        const { error: e } = await supabase.from('duty').update(payload).eq('id', id);
         if (e) throw e;
       } else {
         await insertOnce('duty', { id: newId(), household_id: household.id, ...payload });
@@ -91,17 +93,20 @@ type Payload = {
 };
 
 /** Restore keeps every other column exactly as it is, so one changed field still sends all seven. */
-const save7 = (d: DutyRow, change: Partial<Payload>, save: (p: Payload) => void) =>
-  save({
-    name: d.name,
-    effort_points: d.effort_points,
-    every_days: d.every_days,
-    weekdays: d.weekdays,
-    schedule: d.schedule,
-    fixed_member_id: d.fixed_member_id,
-    active: d.active,
-    ...change,
-  });
+const save7 = (d: DutyRow, change: Partial<Payload>, save: (p: Payload, id: string) => void) =>
+  save(
+    {
+      name: d.name,
+      effort_points: d.effort_points,
+      every_days: d.every_days,
+      weekdays: d.weekdays,
+      schedule: d.schedule,
+      fixed_member_id: d.fixed_member_id,
+      active: d.active,
+      ...change,
+    },
+    d.id,
+  );
 
 function DutyLine({
   duty,
@@ -185,7 +190,7 @@ function DutyForm({
   mates: { value: string; label: string }[];
   busy: boolean;
   onCancel: () => void;
-  onSave: (p: Payload) => void;
+  onSave: (p: Payload, id: string | null) => void;
 }) {
   const [text, setText] = useState(duty?.name ?? '');
   const [points, setPoints] = useState(String(duty?.effort_points ?? 1));
@@ -199,7 +204,7 @@ function DutyForm({
   const name = text.trim().replace(/\s+/g, ' ');
   const n = Number(everyDays);
   const cadenceOk = mode === 'weekdays' ? weekdays.length > 0 : Number.isInteger(n) && n >= 1 && n <= 90;
-  const ok = name.length > 0 && cadenceOk && (schedule === 'rolling' || !!fixed);
+  const ok = name.length > 0 && cadenceOk && (schedule === 'rolling' || mates.some((m) => m.value === fixed));
 
   return (
     <Block>
@@ -280,16 +285,19 @@ function DutyForm({
         color="brass"
         disabled={busy || !ok}
         onPress={() =>
-          onSave({
-            name,
-            effort_points: Number(points),
-            // Exactly one cadence: the unused one must be null, never an empty array.
-            every_days: mode === 'days' ? n : null,
-            weekdays: mode === 'weekdays' ? [...weekdays].sort() : null,
-            schedule,
-            fixed_member_id: schedule === 'fixed' ? fixed : null,
-            active,
-          })
+          onSave(
+            {
+              name,
+              effort_points: Number(points),
+              // Exactly one cadence: the unused one must be null, never an empty array.
+              every_days: mode === 'days' ? n : null,
+              weekdays: mode === 'weekdays' ? [...weekdays].sort() : null,
+              schedule,
+              fixed_member_id: schedule === 'fixed' ? fixed : null,
+              active,
+            },
+            duty?.id ?? null,
+          )
         }
       />
       {duty && <MagnetButton label="Cancel" outline onPress={onCancel} />}
