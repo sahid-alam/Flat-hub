@@ -3,8 +3,8 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, View } from 'react-native';
 
 import { matchProduct, normalizeExtraction, normalizeName, type Extraction } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
@@ -14,7 +14,8 @@ import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
-import { Choice, DateField, ErrorText, Field, Icon, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
+import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 type Kind = 'item' | 'fee' | 'discount';
 type Line = {
@@ -63,7 +64,8 @@ export default function ImportOrder() {
   const c = usePalette();
   const { me, members, household, products, reload } = useHousehold();
   const [text, setText] = useState('');
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState<string | null>(null); // what is being read, for the skeleton
+  const run = useRef(0); // bumped by Cancel: a reading that comes back late is dropped
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [paidBy, setPaidBy] = useState(me.id);
@@ -80,11 +82,13 @@ export default function ImportOrder() {
   async function read(get: () => Promise<ExtractInput | null>) {
     setReadError(null);
     setError(null);
+    const mine = ++run.current;
     try {
       const input = await get();
       if (!input) return; // picker cancelled
-      setReading(true);
+      setReading(input.type === 'pdf' ? 'the invoice' : input.type === 'image' ? 'the screenshot' : 'your list');
       const raw = await extractSpend(input);
+      if (mine !== run.current) return; // cancelled while reading
       const { extraction: x, problems } = normalizeExtraction(raw);
       if (!x) throw new Error(problems.join(' ') || "Couldn't find an order in that.");
       setDraft({
@@ -106,9 +110,9 @@ export default function ImportOrder() {
         })),
       });
     } catch (e) {
-      setReadError(e instanceof Error ? e.message : String(e));
+      if (mine === run.current) setReadError(e instanceof Error ? e.message : String(e));
     } finally {
-      setReading(false);
+      if (mine === run.current) setReading(null);
     }
   }
 
@@ -136,24 +140,34 @@ export default function ImportOrder() {
 
   // ---------------------------------------------------------------- input stage
 
+  if (reading) {
+    return (
+      <Screen>
+        <ReadingSkeleton what={reading} />
+        <MagnetButton
+          label="Cancel"
+          outline
+          onPress={() => {
+            run.current++; // ponytail: the request still runs to the end; its answer is just ignored
+            setReading(null);
+          }}
+        />
+      </Screen>
+    );
+  }
+
   if (!draft) {
     return (
       <Screen>
         <T soft>Pick the Zepto invoice or a screenshot of the order. You'll check every line before anything is saved.</T>
-        <MagnetButton
-          label="Invoice PDF or image"
-          icon={{ ios: 'doc', android: 'description' }}
-          disabled={reading}
-          onPress={pickFile}
-        />
+        <MagnetButton label="Invoice PDF or image" icon={{ ios: 'doc', android: 'description' }} onPress={pickFile} />
         <MagnetButton
           label="Screenshot from photos"
           outline
           icon={{ ios: 'photo', android: 'image' }}
-          disabled={reading}
           onPress={pickScreenshot}
         />
-        <Slip>
+        <Block>
           <Field
             label="Or type it"
             value={text}
@@ -165,26 +179,20 @@ export default function ImportOrder() {
           <MagnetButton
             label="Read it"
             outline
-            disabled={reading || !text.trim()}
+            disabled={!text.trim()}
             onPress={() => read(async () => ({ type: 'text', text: text.trim() }))}
           />
-        </Slip>
+        </Block>
 
-        {reading && (
-          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-            <ActivityIndicator color={c.ink} />
-            <T soft>Reading the order…</T>
-          </View>
-        )}
         {readError && (
-          <Slip magnet="tomato">
-            <T weight="600">Couldn't read that</T>
+          <Block>
+            <T weight="700">Couldn't read that</T>
             <ErrorText error={readError} />
             <T size={15} soft>
               Reading orders may not be set up yet. You can still add the spend by hand.
             </T>
             <MagnetButton label="Add it by hand" outline onPress={() => router.replace('/spend')} />
-          </Slip>
+          </Block>
         )}
       </Screen>
     );

@@ -7,7 +7,8 @@ import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
-import { Choice, ErrorText, Field, Icon, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { AmountBlock, BalanceBar, roundingLine } from '@/ui/capture';
+import { Block, Choice, ErrorText, Field, Icon, MagnetButton, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 type Kind = 'item' | 'fee' | 'discount';
 type Line = { id: string; name: string; amount: string; kind: Kind };
@@ -58,14 +59,40 @@ export default function AddSpend() {
     router.back();
   }
 
+  const unbalanced = lines.length > 0 && !balanced;
+
   return (
     <Screen>
-      <Field label="Amount paid (₹)" big autoFocus value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0" />
+      <AmountBlock label="Amount paid" autoFocus value={amount} onChangeText={setAmount} />
 
       <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Where from
-        </T>
+        <SectionLabel>Paid by</SectionLabel>
+        <Choice
+          value={paidBy}
+          onChange={setPaidBy}
+          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
+        />
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Paid from</SectionLabel>
+        <Choice
+          value={paidFrom}
+          onChange={setPaidFrom}
+          options={[
+            { value: 'pool', label: 'From pool' },
+            { value: 'personal', label: 'Own pocket' },
+          ]}
+        />
+        {paidFrom === 'personal' && (
+          <T size={15} soft>
+            It goes on the treasurer's "to reimburse" list until it's paid back.
+          </T>
+        )}
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Where from</SectionLabel>
         <Choice
           value={source}
           onChange={setSource}
@@ -80,45 +107,8 @@ export default function AddSpend() {
         <Field label="Store (optional)" value={store} onChangeText={setStore} placeholder="Sharma Dairy" />
       )}
 
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid by
-        </T>
-        <Choice
-          value={paidBy}
-          onChange={setPaidBy}
-          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
-        />
-      </View>
-
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid from
-        </T>
-        <Choice
-          value={paidFrom}
-          onChange={setPaidFrom}
-          options={[
-            { value: 'pool', label: 'The kitty' },
-            { value: 'personal', label: 'Own pocket' },
-          ]}
-        />
-        {paidFrom === 'personal' && (
-          <T size={15} soft>
-            It goes on the treasurer's "to reimburse" list until it's paid back.
-          </T>
-        )}
-      </View>
-
-      <Slip>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <T weight="600">Lines (optional)</T>
-          {lines.length > 0 && total !== null && (
-            <T size={15} weight="600" color={balanced ? c.green : c.tomato}>
-              {balanced ? 'Adds up' : `${formatINR(linesTotal)} of ${formatINR(total)}`}
-            </T>
-          )}
-        </View>
+      <Block>
+        <SectionLabel>Lines · optional</SectionLabel>
         {lines.map((l, i) => (
           <View key={l.id} style={{ gap: 8 }}>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
@@ -133,7 +123,7 @@ export default function AddSpend() {
                 accessibilityLabel={`Remove line ${i + 1}`}
                 onPress={() => setLines(lines.filter((_, j) => j !== i))}
                 style={{ width: 48, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.inkSoft} />
+                <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.muted} />
               </Pressable>
             </View>
             <Choice
@@ -158,13 +148,21 @@ export default function AddSpend() {
             Delivery and handling are fees; coupons are discounts. Lines must add up to the amount paid.
           </T>
         )}
-      </Slip>
+      </Block>
+
+      {lines.length > 0 && total !== null && linesValid && (
+        <BalanceBar
+          total={total}
+          lines={linesTotal}
+          onFix={() => setLines([...lines, { id: newId(), ...roundingLine(total - linesTotal) }])}
+        />
+      )}
 
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : total ? `Save ${formatINR(total)}` : 'Save'}
-        color="tomato"
-        disabled={busy || !total || (lines.length > 0 && !balanced)}
+        label={busy ? 'Saving…' : unbalanced ? 'Save once lines add up' : total ? `Save ${formatINR(total)}` : 'Save'}
+        color="brass"
+        disabled={busy || !total || unbalanced}
         onPress={save}
       />
     </Screen>
