@@ -376,7 +376,7 @@ function initialsFor(names: string[]): string[] {
 const CHECK: IconName = { ios: 'checkmark', android: 'check' };
 
 /** Who has topped up: initials with ✓ or ○, always in alphabetical order. No amounts, no ranking. */
-export function Avatars({ mates }: { mates: { name: string; done: boolean }[] }) {
+export function Avatars({ mates }: { mates: { id: string; name: string; done: boolean }[] }) {
   const c = usePalette();
   const ink = useInk();
   const sorted = [...mates].sort((a, b) => a.name.localeCompare(b.name));
@@ -386,7 +386,7 @@ export function Avatars({ mates }: { mates: { name: string; done: boolean }[] })
       <View role="list" style={s.avatarRow}>
         {sorted.map((m, i) => (
           <View
-            key={m.name}
+            key={m.id}
             role="listitem"
             accessible
             accessibilityLabel={`${m.name}, ${m.done ? 'topped up' : 'not yet'}`}
@@ -395,13 +395,14 @@ export function Avatars({ mates }: { mates: { name: string; done: boolean }[] })
               style={[
                 s.avatar,
                 m.done
-                  ? { backgroundColor: c.ground, borderColor: c.ground }
+                  ? { backgroundColor: c.ground, borderColor: c.line }
                   : { borderColor: ink.muted, borderStyle: 'dashed' },
               ]}>
               <T size={13} weight="700">
                 {inits[i]}
               </T>
-              <View style={[s.badge, { backgroundColor: m.done ? c.positive : c.ground, borderColor: c.ground }]}>
+              <View
+                style={[s.badge, { backgroundColor: m.done ? c.positive : c.ground, borderColor: m.done ? c.ground : c.muted }]}>
                 {m.done ? <Icon name={CHECK} size={12} color={c.ground} /> : <Ring color={c.muted} />}
               </View>
             </View>
@@ -508,7 +509,10 @@ function MonthName({ name, size }: { name: string; size: number }) {
     <Text
       aria-hidden
       numberOfLines={1}
-      style={[s.monthName, { fontSize: size, lineHeight: size, bottom: -Math.round(size * 0.19), color: ink }]}>
+      style={[
+        s.monthName,
+        { fontSize: size, lineHeight: size, bottom: -Math.round(size * 0.19), color: ink, opacity: 0.34 },
+      ]}>
       {name}
     </Text>
   );

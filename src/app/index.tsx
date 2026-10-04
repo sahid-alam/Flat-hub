@@ -13,6 +13,7 @@ import { insertOnce } from '@/lib/supabase';
 import { monthLabel, monthOf, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
 import { QuickAdd } from '@/ui/quickadd';
+import { monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
 import {
   Avatars,
   Block,
@@ -22,6 +23,7 @@ import {
   Logo,
   MagnetButton,
   MonthCard,
+  Position,
   Row,
   Rule,
   Screen,
@@ -31,9 +33,7 @@ import {
   usePalette,
 } from '@/ui/kit';
 
-const ADD_PILL = 56;
-const longMonth = (month: string) =>
-  new Date(`${month}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+const FADE = 92; // the scrim under the floating + Add pill, as the artboard specifies
 
 export default function KittyHome() {
   const c = usePalette();
@@ -62,14 +62,13 @@ export default function KittyHome() {
 
   const mine = position(books, me.id);
   const owed = unreimbursed(spends, entries);
-  const monthSpends = spends.filter((s) => inMonth(s.occurred_at));
-  const monthSpent = monthSpends.reduce((a, s) => a + s.total_paise, 0);
-  const monthEntries = monthSpends.length + entries.filter((e) => inMonth(e.occurred_at)).length;
+  const rows = monthRows(spends, entries, month);
+  const monthCount = rows.monthSpends.length + rows.monthEntries.length;
   const heroWidth = Math.min(width, 560) - 32 - 42;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.ground }}>
-      <Screen padBottom={ADD_PILL + 16}>
+      <Screen padBottom={FADE}>
         <View style={styles.header}>
           <Logo />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -102,9 +101,7 @@ export default function KittyHome() {
             <T size={15} weight="600" soft>
               You
             </T>
-            <T num size={17}>
-              {formatINR(mine, { sign: true })}
-            </T>
+            <Position paise={mine} />
             <T size={15} weight="600" soft>
               {mine > 0 ? '· the kitty owes you' : mine < 0 ? '· due at your next top-up' : '· all square'}
             </T>
@@ -143,10 +140,10 @@ export default function KittyHome() {
               {toppedUp.length} of {current.length} topped up · {formatINR(totalIn)} in
             </T>
             <T size={13} soft>
-              {longMonth(month)}
+              {monthName(month)}
             </T>
           </View>
-          <Avatars mates={current.map((m) => ({ name: m.display_name.split(' ')[0], done: (putIn.get(m.id) ?? 0) > 0 }))} />
+          <Avatars mates={current.map((m) => ({ id: m.id, name: m.display_name.split(' ')[0], done: (putIn.get(m.id) ?? 0) > 0 }))} />
         </Block>
 
         <Block style={{ gap: 0, paddingBottom: 8 }}>
@@ -158,7 +155,7 @@ export default function KittyHome() {
           ) : (
             <>
               {feed(spends, entries)
-                .slice(0, 4)
+                .slice(0, 8)
                 .map((item, i) => (
                   <View key={(item.spend ?? item.entry)!.id}>
                     {i > 0 && <Rule />}
@@ -198,16 +195,30 @@ export default function KittyHome() {
         <View style={{ gap: 10 }}>
           <SectionLabel>Statements</SectionLabel>
           <MonthCard
-            month={longMonth(month)}
-            pill={`${formatINR(monthSpent)} · ${monthEntries} ${monthEntries === 1 ? 'entry' : 'entries'}`}
-            status="provisional"
-            tone="sage"
+            month={monthName(month)}
+            pill={`${formatINR(rows.spent)} · ${monthCount} ${monthCount === 1 ? 'entry' : 'entries'}`}
+            status={statusFor(month)}
+            tone={toneFor(month)}
             height={180}
-            onPress={() => router.push('/statement')}
+            onPress={() => router.push({ pathname: '/statement/[month]', params: { month } })}
           />
+          <Block style={{ gap: 0, paddingVertical: 4 }}>
+            <Row
+              label="Every month"
+              icon={{ ios: 'calendar', android: 'calendar_month' }}
+              onPress={() => router.push('/statement')}
+            />
+          </Block>
         </View>
       </Screen>
 
+      {!picking && (
+        <View pointerEvents="none" style={[styles.fade, { height: FADE + insets.bottom }]}>
+          {[0, 0.35, 0.7, 1].map((o, i) => (
+            <View key={o} style={{ flex: 1, opacity: o, backgroundColor: c.ground, marginTop: i ? -1 : 0 }} />
+          ))}
+        </View>
+      )}
       {!picking && (
         <View pointerEvents="box-none" style={[styles.addDock, { bottom: insets.bottom + 16 }]}>
           <View style={{ width: 148 }}>
@@ -244,7 +255,7 @@ function TopUpCard({
   const [error, setError] = useState<string | null>(null);
   const paise = parseRupees(text);
   const first = holderName.split(' ')[0];
-  const name = longMonth(month);
+  const name = monthName(month);
 
   if (suggested === 0)
     return (
@@ -374,6 +385,7 @@ const styles = StyleSheet.create({
   mates: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   spread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   addDock: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   pill: {
     minHeight: 56,
     borderRadius: 9999,

@@ -160,7 +160,13 @@ export default function AddSpend() {
 
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : unbalanced ? 'Save once lines add up' : total ? `Save ${formatINR(total)}` : 'Save'}
+        label={busy ? 'Saving…' : lines.length > 0 && total === null
+              ? 'Enter the amount paid'
+              : unbalanced
+                ? 'Save once lines add up'
+                : total
+                  ? `Save ${formatINR(total)}`
+                  : 'Save'}
         color="brass"
         disabled={busy || !total || unbalanced}
         onPress={save}

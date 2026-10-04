@@ -46,7 +46,7 @@ function Detail({ month }: { month: string }) {
   const status = statusFor(month);
   const split: { label: string; paise: number; tone: BlockTone }[] = [
     { label: 'Zepto', paise: zepto, tone: 'stone' },
-    { label: monthSpends.some((s) => s.source === 'other') ? 'Local & other' : 'Local', paise: spent - zepto, tone: 'sage' },
+    { label: monthSpends.some((s) => s.source === 'other') ? 'Local & other' : 'Local', paise: spent - zepto, tone: 'raised' },
   ];
   const pct = (p: number) => `${Math.round((p * 100) / spent)}%`;
 

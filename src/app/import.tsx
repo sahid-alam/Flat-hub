@@ -332,7 +332,7 @@ export default function ImportOrder() {
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
                 <View style={{ flex: 2 }}>
                   <Field
-                    label={l.qty !== 1 || l.unit ? `Line ${i + 1} · ${l.qty}${l.unit ? ` ${l.unit}` : ''}` : `Line ${i + 1}`}
+                    label={l.qty !== 1 || l.unit ? `Line ${i + 1} · ${l.qty}${l.unit ? ` × ${l.unit}` : ''}` : `Line ${i + 1}`}
                     value={l.name}
                     onChangeText={(name) => update(i, { name, ...match(name, l.kind) })}
                   />
@@ -405,9 +405,9 @@ export default function ImportOrder() {
           <Rule />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <T weight="700">Total paid</T>
+          <T weight="700">Lines</T>
           <T num size={22}>
-            {total === null ? '—' : formatINR(total)}
+            {linesValid ? formatINR(linesTotal) : '—'}
           </T>
         </View>
       </Block>
@@ -455,11 +455,13 @@ export default function ImportOrder() {
         label={
           busy
             ? 'Saving…'
-            : !balanced
-              ? 'Save once lines add up'
-              : draft.totalGuessed
-                ? 'Check the total'
-                : `Save ${formatINR(total!)}`
+            : total === null
+              ? 'Enter the amount paid'
+              : !balanced
+                ? 'Save once lines add up'
+                : draft.totalGuessed
+                  ? 'Check the total'
+                  : `Save ${formatINR(total)}`
         }
         color="brass"
         disabled={busy || !ready}
