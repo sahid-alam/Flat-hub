@@ -8,6 +8,7 @@ import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
+import { sayError } from '@/lib/util';
 import { reverseSpend } from '@/ui/activity';
 import { Block, Choice, ErrorText, Field, MagnetButton, SectionLabel, T, Tile, Toast } from '@/ui/kit';
 
@@ -100,7 +101,7 @@ export function QuickAdd({ onPicking }: { onPicking?: (picking: boolean) => void
 }
 
 function Confirm({ product, onDone }: { product: ProductRow; onDone: (spend: Logged['spend']) => void }) {
-  const { me, household, reload } = useHousehold();
+  const { me, household, holder, reload } = useHousehold();
   const [text, setText] = useState(rupees(product.default_price_paise));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +128,7 @@ function Confirm({ product, onDone }: { product: ProductRow; onDone: (spend: Log
     });
     if (error && !(await landed('spend', ids.spend))) {
       setBusy(false);
-      return setError(error.message);
+      return setError(sayError(error, holder?.display_name));
     }
     await reload();
     onDone(spend);

@@ -11,7 +11,7 @@ import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
-import { monthLabel, monthOf, thisMonth } from '@/lib/util';
+import { monthLabel, monthOf, sayError, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
 import { QuickAdd } from '@/ui/quickadd';
 import { monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
@@ -43,7 +43,7 @@ export default function KittyHome() {
   const { width } = useWindowDimensions();
   const h = useHousehold();
   const [picking, setPicking] = useState(false); // the + Add pill steps aside while a quick-add confirm is open
-  const { books, me, members, holder, isTreasurer, entries, spends, household, reload } = h;
+  const { books, me, members, holder, isTreasurer, entries, spends, household, closes, reload } = h;
   // ponytail: both scans are O(lots × moves); memoised per load, which is enough at a flat's volume.
   // Sum the ledger into a Map<lot_id, qty> once if a few years of history ever makes this visible.
   const { short, expiring } = useMemo(
@@ -129,7 +129,7 @@ export default function KittyHome() {
             suggested={suggestedTopup(books, me.id)}
             position={mine}
             monthly={household.monthly_topup_paise}
-            holderName={holder?.display_name ?? 'the treasurer'}
+            holderName={holder?.display_name ?? null}
             vpa={holder?.upi_vpa ?? null}
             self={isTreasurer}
             month={month}
@@ -226,7 +226,7 @@ export default function KittyHome() {
           <MonthCard
             month={monthName(month)}
             pill={`${formatINR(rows.spent)} · ${monthCount} ${monthCount === 1 ? 'entry' : 'entries'}`}
-            status={statusFor(month)}
+            status={statusFor(month, closes ?? [])}
             tone={toneFor(month)}
             height={180}
             onPress={() => router.push({ pathname: '/statement/[month]', params: { month } })}
@@ -263,7 +263,7 @@ function TopUpCard({
   suggested,
   position: pos,
   monthly,
-  holderName,
+  holderName: holderDisplayName,
   vpa,
   self,
   month,
@@ -272,7 +272,7 @@ function TopUpCard({
   suggested: number;
   position: number;
   monthly: number;
-  holderName: string;
+  holderName: string | null;
   vpa: string | null;
   self: boolean;
   month: string;
@@ -283,6 +283,7 @@ function TopUpCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const paise = parseRupees(text);
+  const holderName = holderDisplayName ?? 'the treasurer'; // a flat with no treasurer set yet
   const first = holderName.split(' ')[0];
   const name = monthName(month);
 
@@ -355,7 +356,7 @@ function TopUpCard({
           try {
             await onRecord(paise!);
           } catch (e) {
-            setError((e as Error).message);
+            setError(sayError(e, holderDisplayName));
           }
           setBusy(false);
         }}

@@ -6,6 +6,7 @@ import { exactProduct } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
 import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
+import { sayError } from '@/lib/util';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
 import { AmountBlock, BalanceBar, roundingLine } from '@/ui/capture';
@@ -17,7 +18,7 @@ type Line = { id: string; name: string; amount: string; kind: Kind };
 
 export default function AddSpend() {
   const c = usePalette();
-  const { me, members, household, products, reload } = useHousehold();
+  const { me, members, household, products, holder, reload } = useHousehold();
   const putAway = usePutAway();
   const [amount, setAmount] = useState('');
   const [source, setSource] = useState<SpendRow['source']>('local');
@@ -65,7 +66,7 @@ export default function AddSpend() {
       p_lines: named.map((l) => ({ id: l.id, name: l.name, line_total_paise: l.paise, kind: l.kind, product_id: l.product_id })),
     });
     setBusy(false);
-    if (error) return setError(error.message);
+    if (error) return setError(sayError(error, holder?.display_name));
     // ponytail: /spend has no qty field, so a tracked line opens its lot at qty 1 of the base unit.
     await putAway.ask(named.map((l) => ({ id: l.id, name: l.name, product_id: l.product_id, qty: 1, unit: null, kind: l.kind })));
     await reload();

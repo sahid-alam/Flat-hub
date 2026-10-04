@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { Absence, Books, PoolEntry, Spend } from '@/domain/kitty';
+import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
@@ -33,6 +33,7 @@ export type LineRow = {
   unit: string | null;
 };
 export type EntryRow = PoolEntry & { id: string; occurred_at: string; note: string | null; spend_id: string | null };
+export type CloseRow = Close & { id: string; closed_at: string; closed_by: string };
 export type ProductRow = {
   id: string;
   name: string;
@@ -76,6 +77,7 @@ type Data = {
   moves: MoveRow[];
   uoms: UomRow[];
   shopping: ShoppingRow[];
+  closes: CloseRow[] | null; // null: the month_close table isn't there yet
 };
 
 type Ctx = {
@@ -92,7 +94,7 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping] = await Promise.all([
+  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes] = await Promise.all([
     supabase.from('household').select('*').eq('id', h).single(),
     supabase.from('member').select('*').eq('household_id', h).order('display_name'),
     supabase.from('member_absence').select('*').eq('household_id', h).order('from_date', { ascending: false }),
@@ -113,11 +115,12 @@ async function load(userId: string): Promise<Data | null> {
       .eq('household_id', h)
       .order('done_at', { ascending: true, nullsFirst: true })
       .order('created_at'),
+    supabase.from('month_close').select('*').eq('household_id', h).order('month'),
   ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
-  // The kitty's tables are fatal — without them there is no flat. The stock tables are not: a web
-  // build that reaches live before the migration does must degrade to "no stock", never to the
-  // create-a-flat screen (_layout routes `!!session && !data` to welcome).
+  // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
+  // are not: a web build that reaches live before the migration does must degrade to "no stock" or
+  // "nothing closed", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
   for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
@@ -132,6 +135,7 @@ async function load(userId: string): Promise<Data | null> {
     moves: moves.data ?? [],
     uoms: uoms.data ?? [],
     shopping: shopping.data ?? [],
+    closes: closes.data ?? null,
   };
 }
 
@@ -168,6 +172,8 @@ export function BooksProvider({ children }: { children: ReactNode }) {
             spends: data.spends,
             entries: data.entries,
             monthlyTopupPaise: data.household.monthly_topup_paise,
+            lines: data.lines,
+            products: data.products,
           }
         : null,
     [data],
