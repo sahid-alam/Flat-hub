@@ -273,39 +273,41 @@ export default function ImportOrder() {
     router.back();
   }
 
+  const blankLine = (): Line => ({ id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false });
+
   return (
     <Screen>
-      <Field
-        label="Amount paid (₹)"
-        big
-        value={draft.total}
-        onChangeText={(t) => set({ total: t, totalGuessed: false })}
-        keyboardType="decimal-pad"
-        placeholder="0"
-      />
+      <AmountBlock label="Amount paid" value={draft.total} onChangeText={(t) => set({ total: t, totalGuessed: false })} />
 
-      {draft.totalGuessed && (
-        <View style={{ gap: 4 }}>
-          <T size={15} weight="600" color={c.tomato}>
-            The total wasn't on the bill, so this is the lines' sum. Check what was actually paid (fees, coupons).
-          </T>
-          {total !== null && (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => set({ totalGuessed: false })}
-              style={{ minHeight: 48, justifyContent: 'center' }}>
-              <T size={15} weight="600" color={c.blue}>
-                Yes, {formatINR(total)} is what we paid
-              </T>
-            </Pressable>
-          )}
-        </View>
-      )}
+      {/* The V1 graft: payer and source sit at the top, so the card says who paid before it lists what. */}
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Paid by</SectionLabel>
+        <Choice
+          value={paidBy}
+          onChange={setPaidBy}
+          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
+        />
+      </View>
 
       <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Where from
-        </T>
+        <SectionLabel>Paid from</SectionLabel>
+        <Choice
+          value={paidFrom}
+          onChange={setPaidFrom}
+          options={[
+            { value: 'pool', label: 'From pool' },
+            { value: 'personal', label: 'Own pocket' },
+          ]}
+        />
+        {paidFrom === 'personal' && (
+          <T size={15} soft>
+            It goes on the treasurer's "to reimburse" list until it's paid back.
+          </T>
+        )}
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Where from</SectionLabel>
         <Choice
           value={draft.source}
           onChange={(source) => set({ source })}
@@ -321,45 +323,8 @@ export default function ImportOrder() {
       )}
       <DateField label="Bought on" value={draft.date} onChange={(date) => date <= today() && set({ date })} />
 
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid by
-        </T>
-        <Choice
-          value={paidBy}
-          onChange={setPaidBy}
-          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
-        />
-      </View>
-
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid from
-        </T>
-        <Choice
-          value={paidFrom}
-          onChange={setPaidFrom}
-          options={[
-            { value: 'pool', label: 'The kitty' },
-            { value: 'personal', label: 'Own pocket' },
-          ]}
-        />
-        {paidFrom === 'personal' && (
-          <T size={15} soft>
-            It goes on the treasurer's "to reimburse" list until it's paid back.
-          </T>
-        )}
-      </View>
-
-      <Slip magnet={ready ? 'green' : 'tomato'}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <T weight="600">Check the lines</T>
-          {total !== null && (
-            <T size={15} weight="600" color={ready ? c.green : c.tomato}>
-              {ready ? 'Adds up' : balanced ? 'Check the total' : `${formatINR(linesTotal)} of ${formatINR(total)}`}
-            </T>
-          )}
-        </View>
+      <Block>
+        <SectionLabel>Check the lines</SectionLabel>
         {draft.lines.map((l, i) => {
           const product = products.find((p) => p.id === l.product_id);
           return (
@@ -380,7 +345,7 @@ export default function ImportOrder() {
                   accessibilityLabel={`Remove line ${i + 1}`}
                   onPress={() => set({ lines: draft.lines.filter((_, j) => j !== i) })}
                   style={{ width: 48, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.inkSoft} />
+                  <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.muted} />
                 </Pressable>
               </View>
               <Choice
@@ -395,8 +360,8 @@ export default function ImportOrder() {
               {l.kind === 'item' &&
                 (product ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <T size={15} weight="600" color={c.green} style={{ flex: 1 }}>
-                      {l.confirmed ? product.name : `Is it ${product.name}?`}
+                    <T size={15} weight="600" color={c.positive} style={{ flex: 1 }}>
+                      {l.confirmed ? `Matched: ${product.name}` : `Is it ${product.name}?`}
                     </T>
                     {!l.confirmed && (
                       <Pressable
@@ -404,7 +369,7 @@ export default function ImportOrder() {
                         accessibilityLabel={`Yes, line ${i + 1} is ${product.name}`}
                         onPress={() => update(i, { confirmed: true })}
                         style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
-                        <T size={15} weight="600" color={c.blue}>
+                        <T size={15} weight="700" color={c.accentText}>
                           Yes
                         </T>
                       </Pressable>
@@ -414,14 +379,14 @@ export default function ImportOrder() {
                       accessibilityLabel={`Line ${i + 1} is not ${product.name}`}
                       onPress={() => update(i, { product_id: null, confirmed: false })}
                       style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
-                      <T size={15} weight="600" color={c.blue}>
+                      <T size={15} weight="700" color={c.accentText}>
                         Not it
                       </T>
                     </Pressable>
                   </View>
                 ) : (
                   <T size={15} soft>
-                    New, not in your products yet
+                    New product: pick or create
                   </T>
                 ))}
             </View>
@@ -431,21 +396,72 @@ export default function ImportOrder() {
           label="Add a line"
           outline
           icon={{ ios: 'plus', android: 'add' }}
-          onPress={() =>
-            set({ lines: [...draft.lines, { id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false }] })
-          }
+          onPress={() => set({ lines: [...draft.lines, blankLine()] })}
         />
-        {problems.map((p, i) => (
-          <T key={i} size={15} weight="500" color={balanced ? c.inkSoft : c.tomato}>
-            {p}
+
+        {/* The double rule: a bill's own way of saying "and that is the total". */}
+        <View style={{ gap: 3, marginTop: 4 }}>
+          <Rule />
+          <Rule />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <T weight="700">Total paid</T>
+          <T num size={22}>
+            {total === null ? '—' : formatINR(total)}
           </T>
-        ))}
-      </Slip>
+        </View>
+      </Block>
+
+      {/* The bill carried no total, so this is the lines' sum: a mate has to agree to it before Save wakes up. */}
+      {draft.totalGuessed ? (
+        <WarnNote>
+          <T size={15} weight="700" color={c.warnFg}>
+            The total wasn't on the bill
+          </T>
+          <T size={15} color={c.warnFg}>
+            This is the lines' sum. Check what was actually paid (fees, coupons).
+          </T>
+          {total !== null && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => set({ totalGuessed: false })}
+              style={{ minHeight: 48, justifyContent: 'center' }}>
+              <T size={15} weight="700" color={c.warnFg}>
+                Yes, {formatINR(total)} is what we paid
+              </T>
+            </Pressable>
+          )}
+        </WarnNote>
+      ) : (
+        draft.lines.length > 0 &&
+        total !== null &&
+        linesValid && (
+          <BalanceBar
+            total={total}
+            lines={linesTotal}
+            onFix={() => set({ lines: [...draft.lines, { ...blankLine(), ...roundingLine(total - linesTotal) }] })}
+          />
+        )
+      )}
+
+      {problems.map((p, i) => (
+        <T key={i} size={15} soft>
+          {p}
+        </T>
+      ))}
 
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : total ? `Save ${formatINR(total)}` : 'Save'}
-        color="tomato"
+        label={
+          busy
+            ? 'Saving…'
+            : !balanced
+              ? 'Save once lines add up'
+              : draft.totalGuessed
+                ? 'Check the total'
+                : `Save ${formatINR(total!)}`
+        }
+        color="brass"
         disabled={busy || !ready}
         onPress={save}
       />
