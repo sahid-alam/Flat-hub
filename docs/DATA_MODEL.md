@@ -100,12 +100,15 @@ duty        (id, household_id, name (1..60 chars), effort_points int 1..10 defau
              active bool default true, created_at,
              unique (household_id, id))                          -- chore_event's FK target
 chore_event (id, household_id, duty_id, member_id, outcome 'done'|'skipped'|'swapped',
-             to_member_id null → member, due_on date, occurred_at, reverses_id unique null,
-             created_at, unique (household_id, id))
+             to_member_id null → member, due_on date, points int 1..10 (set by trigger),
+             occurred_at, reverses_id unique null, created_at, unique (household_id, id))
 ```
 
 - **Assignment:** among members who are active and not absent on `due_on`, pick the one with the largest `fair_share_points − done_points`. Break ties by whoever did this duty least recently, then by `member.id`. There is no randomness, so the next turn is always predictable. It lives in `src/domain/duties.ts` (pure TS) — the database only stores the duties and what actually happened.
-- `done_points` counts only `outcome = 'done'`. **A skip earns no credit** and has a test.
+- `done_points` counts only `outcome = 'done'`, **once per instance** (a double submit from a second browser tab must not pay twice), and prices each one from `chore_event.points`, not the duty's current `effort_points`. `private.set_chore_points` snapshots the price on insert — from the duty, or from the reversed row when `reverses_id` is set — exactly the way money ledgers snapshot paise. An append-only ledger is never re-priced, so editing a duty from 1 to 10 points cannot retroactively buy the editor out of the rota. The client never sets the column.
+- `fair_share_points` is **prorated per day**: each due instance's points are split between the mates on the roll *and* in the flat that day. A mate who joined mid-month is not billed for the weeks before they arrived, and an away mate is not billed for days they could not do the chore — which is what the "Away — no turns" badge promises. **A skip earns no credit** and has a test.
+- `rota()` credits each turn it hands out provisionally, so three duties due the same day go to three different mates instead of all landing on whoever was furthest behind at dawn.
+- A swap **to a mate who is away** on `due_on` does not stick: the instance falls back to the rolling pick, so a chore can't be dumped on someone who physically cannot do it.
 - A swap moves one instance to `to_member_id`. Credit goes to whoever actually does it, and the original assignee keeps their place in the rotation. A `check` makes `to_member_id` present exactly when `outcome = 'swapped'`, and never equal to `member_id`.
 - A duty has **exactly one cadence**: `(every_days is null) <> (weekdays is null)`. `fixed_member_id` matters only when `schedule = 'fixed'`, and a composite FK stops it naming another flat's mate.
 - **`chore_event` is insert-only**, like the kitty and stock ledgers: no UPDATE or DELETE grant. A mistake is corrected with a reversing row whose `reverses_id` points at the original, and `private.check_chore_reversal` (same shape as `check_spend_reversal`) rejects a reversal that doesn't mirror its target's `duty_id`, `member_id`, `outcome`, `due_on` and `to_member_id`. The target must itself have `reverses_id null`, so a reversal of a reversal is impossible.

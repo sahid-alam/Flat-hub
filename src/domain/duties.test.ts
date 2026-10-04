@@ -24,6 +24,7 @@ const ev = (e: Partial<ChoreEvent> & Pick<ChoreEvent, 'duty_id' | 'member_id' | 
   id: `e${String(++seq).padStart(3, '0')}`, // UUIDv7 stands in as an ascending id
   to_member_id: null,
   reverses_id: null,
+  points: 1, // the db snapshots the duty's price onto the row; tests that care pass their own
   ...e,
 });
 
@@ -49,12 +50,12 @@ test('a skip earns no credit, so the skipper gets the next turn', () => {
   assert.equal(assignee(d, '2026-10-01', abc, [], [], ANCHOR, [d]), 'a');
 
   const skipped = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'skipped', due_on: '2026-10-01' })];
-  assert.equal(donePoints(skipped, 'a', [d]), 0);
+  assert.equal(donePoints(skipped, 'a'), 0);
   assert.equal(assignee(d, '2026-10-01', abc, [], skipped, ANCHOR, [d]), 'a'); // the skip was a's instance
   assert.equal(assignee(d, '2026-10-02', abc, [], skipped, ANCHOR, [d]), 'a');
 
   const done = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' })];
-  assert.equal(donePoints(done, 'a', [d]), 1);
+  assert.equal(donePoints(done, 'a'), 1);
   assert.equal(assignee(d, '2026-10-01', abc, [], done, ANCHOR, [d]), 'a'); // a settled it; not reassigned
   assert.equal(assignee(d, '2026-10-02', abc, [], done, ANCHOR, [d]), 'b'); // credit moves you down the list
 });
@@ -66,8 +67,8 @@ test('a swap credits whoever did it; the original assignee keeps their place', (
     ev({ duty_id: 'd1', member_id: 'b', outcome: 'done', due_on: '2026-10-01' }),
   ];
   assert.equal(assignee(d, '2026-10-01', abc, [], events, ANCHOR, [d]), 'b');
-  assert.equal(donePoints(events, 'a', [d]), 0);
-  assert.equal(donePoints(events, 'b', [d]), 1);
+  assert.equal(donePoints(events, 'a'), 0);
+  assert.equal(donePoints(events, 'b'), 1);
   assert.equal(assignee(d, '2026-10-02', abc, [], events, ANCHOR, [d]), 'a'); // a never left the rotation
 });
 
@@ -75,7 +76,9 @@ test('an absent mate is not assigned, and nobody available reads null', () => {
   const d = daily('d1');
   const absences: Absence[] = [{ member_id: 'a', from_date: '2026-10-01', to_date: '2026-10-01' }];
   assert.equal(assignee(d, '2026-10-01', abc, absences, [], ANCHOR, [d]), 'b');
-  assert.equal(assignee(d, '2026-10-02', abc, absences, [], ANCHOR, [d]), 'a'); // back the next day
+  // Back the next day, but NOT handed the day they missed: a owes nothing for 10-01, so b and c,
+  // who each carried half of it, are further behind.
+  assert.equal(assignee(d, '2026-10-02', abc, absences, [], ANCHOR, [d]), 'b');
   const allAway: Absence[] = abc.map((m) => ({ member_id: m.id, from_date: '2026-10-01', to_date: '2026-10-03' }));
   assert.equal(assignee(d, '2026-10-02', abc, allAway, [], ANCHOR, [d]), null);
   assert.equal(assignee(d, '2026-10-02', [{ id: 'z', joined_on: '2026-11-01', left_on: null }], [], [], ANCHOR, [d]), null);
@@ -101,10 +104,10 @@ test('effort points decide the deficit across duties', () => {
   const light = daily('d-light', 1);
   const ab = [mate('a'), mate('b')];
   const events = [
-    ev({ duty_id: 'd-heavy', member_id: 'a', outcome: 'done', due_on: '2026-10-01' }),
+    ev({ duty_id: 'd-heavy', member_id: 'a', outcome: 'done', due_on: '2026-10-01', points: 3 }),
     ev({ duty_id: 'd-light', member_id: 'b', outcome: 'done', due_on: '2026-10-01' }),
   ];
-  assert.equal(donePoints(events, 'a', [heavy, light]), 3);
+  assert.equal(donePoints(events, 'a'), 3);
   assert.equal(assignee(light, '2026-10-02', ab, [], events, ANCHOR, [heavy, light]), 'b'); // a carried 3 points
 });
 
@@ -119,7 +122,7 @@ test('a reversed done stops counting; a reversed swap hands the instance back', 
   const d = daily('d1');
   const done = ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' });
   const undone = [done, ev({ ...done, id: 'e900', reverses_id: done.id })];
-  assert.equal(donePoints(undone, 'a', [d]), 0);
+  assert.equal(donePoints(undone, 'a'), 0);
   assert.equal(assignee(d, '2026-10-02', abc, [], undone, ANCHOR, [d]), 'a'); // as if it never happened
 
   const swap = ev({ duty_id: 'd1', member_id: 'a', outcome: 'swapped', to_member_id: 'b', due_on: '2026-10-01' });
@@ -130,7 +133,7 @@ test('a reversed done stops counting; a reversed swap hands the instance back', 
 test('fair share splits the window evenly, and standing is sorted by id with no ranking', () => {
   const duties = [daily('d1'), { ...daily('d2', 2), active: false }];
   // d1 is 1 point a day: 2 points over the window ÷ 3 mates; the retired d2 does not count
-  assert.deepEqual(fairSharePoints(duties, abc, '2026-10-01', '2026-10-02', ANCHOR), { a: 2 / 3, b: 2 / 3, c: 2 / 3 });
+  assert.deepEqual(fairSharePoints(duties, abc, [], '2026-10-01', '2026-10-02', ANCHOR), { a: 2 / 3, b: 2 / 3, c: 2 / 3 });
   const events = [
     ev({ duty_id: 'd1', member_id: 'c', outcome: 'done', due_on: '2026-10-01' }),
     ev({ duty_id: 'd1', member_id: 'b', outcome: 'skipped', due_on: '2026-10-02' }),
@@ -163,7 +166,57 @@ test('the rota is deterministic: shuffling the inputs changes nothing', () => {
     '2026-10-01 d1 a done',
     '2026-10-01 d2 b skipped',
     '2026-10-02 d1 c swapped', // b swapped it to c
-    '2026-10-03 d1 b null',
+    '2026-10-03 d1 c null', // two duties due the same day go to two different mates
     '2026-10-03 d2 b null',
   ]);
+});
+
+test('credit is priced on the event, so re-pricing a duty never re-prices past work', () => {
+  const d = daily('d1', 1);
+  const done = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01', points: 1 })];
+  assert.equal(donePoints(done, 'a'), 1);
+  // a edits the duty from 1 point to 10. The event keeps the price it was done at.
+  assert.equal(donePoints(done, 'a'), 1);
+  assert.equal(assignee({ ...d, effort_points: 10 }, '2026-10-02', abc, [], done, ANCHOR, [{ ...d, effort_points: 10 }]), 'b');
+});
+
+test('two done rows for one instance pay once', () => {
+  const twice = [
+    ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' }),
+    ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' }), // second tab, fresh id
+  ];
+  assert.equal(donePoints(twice, 'a'), 1);
+});
+
+test('a mate who joined mid-window is not billed for the days before they arrived', () => {
+  const old = ['a', 'b'].map(mate);
+  const joiner: Member = { id: 'c', joined_on: '2026-10-03', left_on: null };
+  const fair = fairSharePoints([daily('d1')], [...old, joiner], [], '2026-10-01', '2026-10-04', ANCHOR);
+  assert.equal(fair.c, 2 / 3); // only 10-03 and 10-04, a third of a point each
+  assert.equal(+fair.a.toFixed(6), +(1 + 2 / 3).toFixed(6));
+  // and so the joiner is not handed every duty on arrival
+  assert.equal(assignee(daily('d1'), '2026-10-04', [...old, joiner], [], [], ANCHOR), 'a');
+});
+
+test('a mate away all window still appears in the standing, owing nothing', () => {
+  const absences: Absence[] = [{ member_id: 'c', from_date: '2026-10-01', to_date: '2026-10-02' }];
+  const rows = standing([daily('d1')], abc, absences, [], '2026-10-01', '2026-10-02', ANCHOR);
+  assert.deepEqual(rows.map((r) => r.memberId), ['a', 'b', 'c']);
+  assert.equal(rows[2].fair, 0);
+});
+
+test('three duties due the same day go to three different mates', () => {
+  const duties = [daily('d1'), daily('d2'), daily('d3')];
+  const out = rota(duties, abc, [], [], '2026-10-01', 1, ANCHOR);
+  assert.deepEqual(out.map((r) => r.memberId), ['a', 'b', 'c']);
+});
+
+test('a swap to a mate who is away does not stick', () => {
+  const d = daily('d1');
+  const absences: Absence[] = [{ member_id: 'b', from_date: '2026-10-05', to_date: '2026-10-20' }];
+  const swap = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'swapped', to_member_id: 'b', due_on: '2026-10-06' })];
+  // Not b: the instance falls back to the rolling pick among the mates who are actually here.
+  assert.equal(assignee(d, '2026-10-06', abc, absences, swap, ANCHOR, [d]), 'a');
+  const cDid = [...swap, ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-05' })];
+  assert.equal(assignee(d, '2026-10-06', abc, absences, cDid, ANCHOR, [d]), 'c');
 });

@@ -24,6 +24,7 @@ export type ChoreEvent = {
   to_member_id: string | null;
   due_on: string;
   reverses_id: string | null;
+  points: number; // the duty's price AT THE TIME, snapshotted by the db. Never re-priced.
 };
 
 const DAY = 86_400_000;
@@ -40,7 +41,7 @@ const live = (events: ChoreEvent[]): ChoreEvent[] => {
 /** Member of the household on that date (joined_on … left_on, both inclusive). */
 const onRoll = (m: Member, date: string): boolean => m.joined_on <= date && (m.left_on === null || date <= m.left_on);
 /** Away on that date. The 3-day rule is a money rule: for duties, one day away is one day you can't do it. */
-const away = (absences: Absence[], memberId: string, date: string): boolean =>
+export const away = (absences: Absence[], memberId: string, date: string): boolean =>
   absences.some((a) => a.member_id === memberId && a.from_date <= date && date <= a.to_date);
 
 /** `anchor` is the duty's created date: a duty is never due before it existed. */
@@ -61,28 +62,48 @@ export function dueDates(duty: Duty, from: string, to: string, anchor: string): 
   return out;
 }
 
-/** Effort points a mate has actually earned. ONLY outcome 'done' — a skip earns no credit. */
-export function donePoints(events: ChoreEvent[], memberId: string, duties: Duty[]): number {
-  const points = new Map(duties.map((d) => [d.id, d.effort_points]));
-  return live(events)
+/** The one event that settles an instance: the last by id, exactly what assignee() looks at. */
+const settling = (events: ChoreEvent[]): ChoreEvent[] => {
+  const byInstance = new Map<string, ChoreEvent>();
+  for (const e of live(events).sort(byId)) byInstance.set(`${e.duty_id}|${e.due_on}`, e);
+  return [...byInstance.values()];
+};
+
+/**
+ * Effort points a mate has actually earned. ONLY outcome 'done' — a skip earns no credit — and only
+ * ONCE per instance: a double submit from a second tab must not pay the points twice.
+ * The price comes off the event, not the duty, so editing a duty never re-prices earned credit.
+ */
+export function donePoints(events: ChoreEvent[], memberId: string): number {
+  return settling(events)
     .filter((e) => e.outcome === 'done' && e.member_id === memberId)
-    .reduce((n, e) => n + (points.get(e.duty_id) ?? 0), 0);
+    .reduce((n, e) => n + e.points, 0);
 }
 
-/** Total points scheduled in the window, split evenly between the mates present in it. */
+/**
+ * Fair share, prorated per day: each due instance's points are split between the mates who were
+ * actually on the roll AND in the flat that day. A mate who joined mid-window is not billed for the
+ * weeks before they arrived, and an away mate is not billed for days they could not do the chore —
+ * which is what the "Away — no turns" badge promises. Mates on roll in the window always get a key,
+ * even at 0, so a fully-away mate still appears in the standing.
+ */
 export function fairSharePoints(
   duties: Duty[],
   members: Member[],
+  absences: Absence[],
   from: string,
   to: string,
   anchor: string,
 ): Record<string, number> {
   const present = members.filter((m) => m.joined_on <= to && (m.left_on === null || from <= m.left_on));
-  const total = duties
-    .filter((d) => d.active)
-    .reduce((n, d) => n + dueDates(d, from, to, anchor).length * d.effort_points, 0);
-  const each = present.length ? total / present.length : 0;
-  return Object.fromEntries(present.map((m) => [m.id, each]));
+  const out: Record<string, number> = Object.fromEntries(present.map((m) => [m.id, 0]));
+  for (const d of duties.filter((d) => d.active)) {
+    for (const date of dueDates(d, from, to, anchor)) {
+      const here = present.filter((m) => onRoll(m, date) && !away(absences, m.id, date));
+      for (const m of here) out[m.id] += d.effort_points / here.length;
+    }
+  }
+  return out;
 }
 
 /**
@@ -103,15 +124,18 @@ export function assignee(
   const settled = live(events);
   // Anything already recorded for this instance settles it: a swap hands it over (whatever the
   // schedule says), a done or a skip names who owned it. Last event wins — UUIDv7 ids sort by time.
+  // A swap TO a mate who is away that day settles nothing: they physically cannot do it, so the
+  // instance falls back to the rolling pick rather than being dumped on them.
   const last = settled.filter((e) => e.duty_id === duty.id && e.due_on === dueOn).sort(byId).pop();
-  if (last) return last.outcome === 'swapped' ? last.to_member_id : last.member_id;
+  if (last && !(last.outcome === 'swapped' && away(absences, last.to_member_id ?? '', dueOn)))
+    return last.outcome === 'swapped' ? last.to_member_id : last.member_id;
   if (duty.schedule === 'fixed') return duty.fixed_member_id;
 
   const can = members.filter((m) => onRoll(m, dueOn) && !away(absences, m.id, dueOn)).sort(byId);
   if (can.length === 0) return null;
 
   const past = settled.filter((e) => e.due_on <= dueOn);
-  const fair = fairSharePoints(duties, members, anchor, dueOn, anchor);
+  const fair = fairSharePoints(duties, members, absences, anchor, dueOn, anchor);
   // Last day this mate did THIS duty; '' (never) sorts first, i.e. longest ago.
   const lastDid = (id: string) =>
     past
@@ -119,9 +143,7 @@ export function assignee(
       .reduce((latest, e) => (e.due_on > latest ? e.due_on : latest), '');
 
   return can
-    .map((m) => ({ id: m.id, deficit: (fair[m.id] ?? 0) - donePoints(past, m.id, duties), last: lastDid(m.id) }))
-    // ponytail: two duties due the same day with identical history land on the same mate until the
-    // least-recently-done tie-break separates them. Thread pending assignments through if that bites.
+    .map((m) => ({ id: m.id, deficit: (fair[m.id] ?? 0) - donePoints(past, m.id), last: lastDid(m.id) }))
     .sort((a, b) => b.deficit - a.deficit || (a.last < b.last ? -1 : a.last > b.last ? 1 : 0) || byId(a, b))[0].id;
 }
 
@@ -137,18 +159,29 @@ export function rota(
 ): { date: string; duty: Duty; memberId: string | null; outcome: ChoreEvent['outcome'] | null }[] {
   const settled = live(events);
   const active = duties.filter((d) => d.active).sort(byId);
+  // Every turn handed out here is credited provisionally, so the second duty due today sees the
+  // first one's points. Without this, three duties due the same day all land on the same mate.
+  // The ids sort after any UUIDv7, so a provisional row is always the latest for its instance.
+  const provisional: ChoreEvent[] = [];
   const out: { date: string; duty: Duty; memberId: string | null; outcome: ChoreEvent['outcome'] | null }[] = [];
   for (let i = 0; i < days; i++) {
     const date = new Date((dayNo(from) + i) * DAY).toISOString().slice(0, 10);
     for (const duty of active) {
       if (!isDueOn(duty, date, anchor)) continue;
       const last = settled.filter((e) => e.duty_id === duty.id && e.due_on === date).sort(byId).pop();
-      out.push({
-        date,
-        duty,
-        memberId: assignee(duty, date, members, absences, events, anchor, duties),
-        outcome: last ? last.outcome : null,
-      });
+      const memberId = assignee(duty, date, members, absences, [...events, ...provisional], anchor, duties);
+      if (!last && memberId)
+        provisional.push({
+          id: `~${date}|${duty.id}`,
+          duty_id: duty.id,
+          member_id: memberId,
+          outcome: 'done',
+          to_member_id: null,
+          due_on: date,
+          reverses_id: null,
+          points: duty.effort_points,
+        });
+      out.push({ date, duty, memberId, outcome: last ? last.outcome : null });
     }
   }
   return out;
@@ -165,12 +198,12 @@ export function standing(
   anchor: string,
 ): { memberId: string; done: number; fair: number; deficit: number }[] {
   const window = live(events).filter((e) => from <= e.due_on && e.due_on <= to);
-  const fair = fairSharePoints(duties, members, from, to, anchor);
+  const fair = fairSharePoints(duties, members, absences, from, to, anchor);
   return members
     .filter((m) => m.id in fair)
     .sort(byId)
     .map((m) => {
-      const done = donePoints(window, m.id, duties);
+      const done = donePoints(window, m.id);
       return { memberId: m.id, done, fair: fair[m.id], deficit: fair[m.id] - done };
     });
 }

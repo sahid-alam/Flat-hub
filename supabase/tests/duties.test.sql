@@ -2,7 +2,7 @@
 -- target, a swap needs someone to swap to, and a duty has exactly one cadence.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(23);
+select plan(26);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -124,6 +124,30 @@ select lives_ok($$ insert into public.chore_event (id, household_id, duty_id, me
           'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'swapped',
           '22222222-0000-7000-8000-000000000002', '2026-10-12', 'bbbbbbbb-0000-7000-8000-00000000000b') $$,
   'a swap reverses when the reversal carries the same to_member_id');
+
+-- ------------------------------------------------- points are snapshotted, never re-priced
+-- duty 1 is 1 point today; every event above carries that price.
+select is((select points from public.chore_event where id = 'bbbbbbbb-0000-7000-8000-000000000001'),
+          (select effort_points from public.duty where id = 'aaaaaaaa-0000-7000-8000-000000000001'),
+  'the event took the duty price at insert time');
+select set_config('flathub.priced_at', (select points::text from public.chore_event
+  where id = 'bbbbbbbb-0000-7000-8000-000000000001'), true);
+update public.duty set effort_points = 10 where id = 'aaaaaaaa-0000-7000-8000-000000000001';
+select is((select points from public.chore_event where id = 'bbbbbbbb-0000-7000-8000-000000000001'),
+          current_setting('flathub.priced_at')::int,
+  're-pricing the duty does not re-price work already done');
+-- and a reversal mirrors its target's price, not the duty's new one, so it still nets to zero.
+insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on)
+  values ('bbbbbbbb-0000-7000-8000-00000000000e', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'done', '2026-10-20');
+insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on, reverses_id)
+  values ('bbbbbbbb-0000-7000-8000-00000000000f', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'done', '2026-10-20',
+          'bbbbbbbb-0000-7000-8000-00000000000e');
+select is((select sum(case when reverses_id is null then points else -points end)
+           from public.chore_event where due_on = '2026-10-20'), 0::bigint,
+  'a reversal carries its target price, so the pair nets to zero');
+update public.duty set effort_points = current_setting('flathub.priced_at')::int where id = 'aaaaaaaa-0000-7000-8000-000000000001';
 
 -- ---------------------------------------------------------------- the outsider
 

@@ -9,7 +9,7 @@ import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
 import { sayError } from '@/lib/util';
 import { cadenceLabel } from '@/ui/duties';
-import { Block, Choice, ErrorText, Field, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
+import { Block, Choice, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 const POINTS = ['1', '2', '3', '5', '8'];
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -135,23 +135,21 @@ function DutyLine({
         accessibilityLabel={`${duty.name}, ${duty.effort_points} points, ${sub}${duty.active ? '' : ', retired'} · edit`}
         onPress={onPress}
         style={({ pressed }) => [
-          { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56 },
+          { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingHorizontal: 10, borderRadius: 16 },
+          // The picked row carries kit's Choice grammar: raised fill plus a 1.5px ink outline.
+          picked ? { backgroundColor: c.raised, borderWidth: 1.5, borderColor: c.ink } : { borderWidth: 1.5, borderColor: 'transparent' },
           pressed && { opacity: 0.6 },
         ]}>
-        <View style={{ minWidth: 38, borderRadius: 11, paddingVertical: 2, backgroundColor: c.raised }}>
-          <T size={12} num color={fg} center>
-            {duty.effort_points}
-          </T>
-        </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T size={16} weight="700" color={fg} numberOfLines={1}>
             {duty.name}
             {duty.active ? '' : ' · Retired'}
           </T>
           <T size={13} soft>
-            {sub}
+            {sub} · {duty.effort_points} {duty.effort_points === 1 ? 'pt' : 'pts'}
           </T>
         </View>
+        <Icon name={{ ios: 'chevron.right', android: 'chevron_right' }} size={14} color={c.muted} />
       </Pressable>
       {!duty.active && (
         <Pressable
@@ -204,12 +202,21 @@ function DutyForm({
   const name = text.trim().replace(/\s+/g, ' ');
   const n = Number(everyDays);
   const cadenceOk = mode === 'weekdays' ? weekdays.length > 0 : Number.isInteger(n) && n >= 1 && n <= 90;
-  const ok = name.length > 0 && cadenceOk && (schedule === 'rolling' || mates.some((m) => m.value === fixed));
+  // The button says what is missing rather than sitting grey and silent (DESIGN.md rule 2).
+  const blocker = !name.length
+    ? 'Name the duty first'
+    : !cadenceOk
+      ? mode === 'weekdays'
+        ? 'Pick at least one weekday'
+        : 'Pick 1 to 90 days'
+      : schedule === 'fixed' && !mates.some((m) => m.value === fixed)
+        ? 'Pick the mate'
+        : null;
 
   return (
     <Block>
       <SectionLabel>{duty ? `Edit ${duty.name}` : 'Add a duty'}</SectionLabel>
-      <Field label="Name" value={text} onChangeText={setText} placeholder="Kitchen floor" maxLength={60} />
+      <Field label="Name" value={text} onChangeText={setText} placeholder="e.g. Terrace sweep" maxLength={60} />
 
       <T size={15} weight="600" soft>
         Effort points
@@ -228,7 +235,7 @@ function DutyForm({
         onChange={setMode}
       />
       {mode === 'weekdays' ? (
-        <View style={{ flexDirection: 'row', gap: 4 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {WD.map((label, i) => (
             <Day
               key={label}
@@ -281,9 +288,9 @@ function DutyForm({
       </T>
 
       <MagnetButton
-        label={busy ? 'Saving…' : duty ? 'Save duty' : 'Add duty'}
+        label={busy ? 'Saving…' : (blocker ?? (duty ? 'Save duty' : 'Add duty'))}
         color="brass"
-        disabled={busy || !ok}
+        disabled={busy || blocker !== null}
         onPress={() =>
           onSave(
             {
@@ -316,7 +323,9 @@ function Day({ label, on, onPress }: { label: string; on: boolean; onPress: () =
       onPress={onPress}
       style={({ pressed }) => [
         {
-          flex: 1,
+          // A wrapping row, never seven 37px toggles squeezed onto a 360px phone.
+          minWidth: 52,
+          paddingHorizontal: 12,
           minHeight: 48,
           borderRadius: 24,
           borderWidth: 1.5,

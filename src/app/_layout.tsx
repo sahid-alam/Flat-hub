@@ -1,16 +1,16 @@
 import { BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
 import { Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { Righteous_400Regular } from '@expo-google-fonts/righteous';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { Pressable, useColorScheme } from 'react-native';
 
 import { BooksProvider, useBooks } from '@/lib/books';
 import '@/lib/invite'; // captures an invite code from the opening URL before the auth redirect
-import { UI, usePalette } from '@/ui/kit';
+import { Icon, UI, usePalette } from '@/ui/kit';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -52,11 +52,28 @@ function Routes() {
         <Stack.Screen name="stock" options={{ title: 'Stock' }} />
         <Stack.Screen name="fridge" options={{ title: 'Fridge' }} />
         <Stack.Screen name="shopping" options={{ title: 'Shopping' }} />
-        <Stack.Screen name="duties" options={{ title: 'Duties' }} />
-        <Stack.Screen name="duties/manage" options={{ title: 'Manage duties' }} />
+        <Stack.Screen name="duties" options={{ title: 'Duties', headerLeft: Back }} />
+        <Stack.Screen name="duties/manage" options={{ title: 'Manage duties', headerLeft: Back }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
       </Stack.Protected>
     </Stack>
+  );
+}
+
+/** The web build is deep-linkable: /duties opened cold has no history, and the app has no tab bar,
+ *  so without this there is no way back to the Kitty. */
+function Back() {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={router.canGoBack() ? 'Back' : 'Kitty'}
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+      style={({ pressed }) => [
+        { minHeight: 48, minWidth: 48, justifyContent: 'center' },
+        pressed && { opacity: 0.6 },
+      ]}>
+      <Icon name={{ ios: 'chevron.left', android: 'chevron_left' }} size={22} />
+    </Pressable>
   );
 }
 
