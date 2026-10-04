@@ -362,7 +362,7 @@ function initialsFor(names: string[]): string[] {
     const w = name.trim().split(/\s+/);
     const tail = w.length > 1 ? w[1] + w[0].slice(1) : w[0].slice(1);
     const tries = [...tail].map((ch) => (w[0][0] + ch).toUpperCase());
-    const pick = tries.find((t) => !used.has(t)) ?? tries[0] ?? w[0][0].toUpperCase();
+    const pick = tries.find((t) => !used.has(t)) ?? tries[0] ?? (w[0][0] ?? '?').toUpperCase();
     used.add(pick);
     return pick;
   });
