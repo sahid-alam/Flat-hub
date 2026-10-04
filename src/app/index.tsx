@@ -67,9 +67,19 @@ export default function KittyHome() {
   const openToday = h.todays.filter((r) => isOpen(r.outcome));
   const myTurn = openToday.find((r) => r.memberId === me.id);
   const nextTurn = myTurn ?? openToday[0];
+  const whoseTurn = nextTurn
+    ? myTurn
+      ? 'yours'
+      : nextTurn.memberId
+        ? h.name(nextTurn.memberId).split(' ')[0]
+        : 'nobody free'
+    : '';
+  // ponytail: name + whose turn + count wraps this row onto two lines at 390px. When more than one
+  // is due the count is the news and the screen behind it lists the names, so the name goes.
   const dutyDetail = nextTurn
-    ? `${nextTurn.duty.name} · ${myTurn ? 'yours' : nextTurn.memberId ? h.name(nextTurn.memberId).split(' ')[0] : 'nobody free'}` +
-      (openToday.length > 1 ? ` · ${openToday.length} due` : '')
+    ? openToday.length > 1
+      ? `${whoseTurn} · ${openToday.length} due`
+      : `${nextTurn.duty.name} · ${whoseTurn}`
     : h.todays.length
       ? 'all done'
       : 'none';
