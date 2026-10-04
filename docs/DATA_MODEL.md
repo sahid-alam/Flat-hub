@@ -1,6 +1,6 @@
 # FlatHub data model
 
-Postgres on Supabase. Every table has `id uuid` (v7, generated on the client), `household_id`, and `created_at`.
+Postgres on Supabase. Every table has `id uuid` (v7, generated on the client), `household_id`, and `created_at` — the one exception is `product_uom`, keyed by `(product_id, unit)`.
 RLS: a row is visible and writable only to members of its household.
 **Ledger tables are insert-only.** A mistake is corrected by inserting a reversing row (`reverses_id`), never by an UPDATE or DELETE.
 
@@ -63,17 +63,23 @@ product       (id, household_id, name unique per household (case-insensitive),
                aliases text[],                                  -- learned Zepto line names, lower(trim)
                base_unit 'g'|'ml'|'pc' default 'pc', track_stock bool default true, min_qty numeric(12,3) null,
                favourite bool, default_price_paise bigint null, category null)   -- M2
-product_uom   (product_id, unit, factor_to_base)               -- '1 packet' = 400 g
+product_uom   (household_id, product_id, unit, factor_to_base numeric(12,4) > 0,
+               primary key (product_id, unit))                   -- '1 packet' = 400 g
 lot           (id, household_id, product_id, spend_line_id null,
                location 'fridge'|'freezer'|'pantry', expiry_date null,
-               opened bool default false, received_at)
-stock_move    (id, lot_id, delta_qty numeric(12,3),             -- in base unit
+               opened bool default false, received_at,
+               unique (household_id, id))                        -- stock_move's FK target
+stock_move    (id, household_id, lot_id, delta_qty numeric(12,3) <> 0,   -- in base unit
                reason 'purchase'|'consume'|'discard'|'adjust', member_id, occurred_at)
-shopping_item (id, household_id, product_id null, name, added_by, done_by_spend_line_id null)
+shopping_item (id, household_id, product_id null, name, added_by,
+               done_by_spend_line_id null, done_at null)
 ```
 
 - `product` is household data, not a ledger: members can insert and update it, nobody can delete it (spend lines point at it; unfavourite instead).
 - `learn_alias(product_id, alias)` appends `lower(trim(alias))` to `aliases` once; a repeat, a blank alias or a non-member's call is a no-op. The import screen calls it when a mate confirms a Zepto line → product match.
+- **`stock_move` is insert-only**, like the kitty ledgers: there is no UPDATE or DELETE grant, so a mistake is corrected with a compensating move (a `consume`/`adjust` row with the opposite sign), never by editing one.
+- `lot` is editable in three columns only (`opened`, `location`, `expiry_date`); `shopping_item` in four (`name`, `product_id`, `done_by_spend_line_id`, `done_at`) and is the one stock table that can be deleted. `product_uom` is insert-only.
+- `put_away(p_lots jsonb)` inserts lots and their opening `'purchase'` `stock_move` in one transaction. Each item is `{id, household_id, product_id, spend_line_id, location, expiry_date, qty}`; the move's id *is* the lot id, so it is idempotent on retry, and `member_id` is whoever called it. The capture flow calls it after a spend whose lines matched `track_stock` products; "Skip" still puts them away as `pantry` with no expiry, so nothing is lost. `spend_line` carries a `unique (household_id, id)` so a lot can't reference another flat's line.
 - On-hand quantity for a lot is `Σ stock_move.delta_qty`, and a lot is empty when that sum is ≤ 0.
 - Products with `track_stock = false` (same-day dahi, milk, bread) create a spend line but no lot.
 - **FEFO order:** `ORDER BY opened DESC, expiry_date ASC NULLS LAST, received_at ASC`. Warn when an unopened lot expires before an opened one.
