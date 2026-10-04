@@ -1,12 +1,28 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, View } from 'react-native';
 
-import { addedLate, istDate, presenceWeights, shares } from '@/domain/kitty';
+import { addedLate, istDate, monthBreakdown, presenceWeights, shares } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
-import { dayLabel } from '@/lib/util';
+import { supabase } from '@/lib/supabase';
+import { confirm, dayLabel, sayError, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
-import { Block, Chip, Hero, Icon, MonthCard, Rule, Screen, SectionLabel, T, usePalette, type BlockTone } from '@/ui/kit';
+import {
+  Block,
+  Chip,
+  ErrorText,
+  Hero,
+  Icon,
+  MonthCard,
+  Rule,
+  Screen,
+  SectionLabel,
+  T,
+  usePalette,
+  type BlockTone,
+  type Palette,
+} from '@/ui/kit';
 import { daysIn, monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
 
 /** One month, read-only and the same for every mate. */
@@ -25,9 +41,17 @@ export default function MonthStatement() {
 const DAYS_W = 76;
 const SHARE_W = 100;
 
+const SOURCE: Record<'zepto' | 'local' | 'other', { label: string; tone: BlockTone }> = {
+  zepto: { label: 'Zepto', tone: 'stone' },
+  local: { label: 'Local', tone: 'raised' },
+  other: { label: 'Other', tone: 'surface' },
+};
+/** `raised` and `surface` are card steps, too close to the block to read as a 12px bar. */
+const barOf = (c: Palette, tone: BlockTone) => (tone === 'raised' ? c.line : tone === 'surface' ? c.muted : c[tone]);
+
 function Detail({ month }: { month: string }) {
   const c = usePalette();
-  const { spends, entries, absences, members, books, me } = useHousehold();
+  const { spends, entries, absences, members, books, me, closes, household, isTreasurer, name: nameOf, holder, reload } = useHousehold();
   const { monthSpends, monthEntries, spent } = monthRows(spends, entries, month);
   const monthShares = shares({ ...books, spends: monthSpends });
   const w = presenceWeights(month, books.members, books.absences);
@@ -35,20 +59,15 @@ function Detail({ month }: { month: string }) {
   const total = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const put = total(monthEntries.filter((e) => e.kind === 'contribution').map((e) => e.amount_paise));
   const back = total(monthEntries.filter((e) => e.kind === 'reimbursement').map((e) => e.amount_paise));
-  const fromPool = total(monthSpends.filter((s) => s.paid_from === 'pool').map((s) => s.total_paise));
-  const ownPocket = total(monthSpends.filter((s) => s.paid_from === 'personal').map((s) => s.total_paise));
-  const zepto = total(monthSpends.filter((s) => s.source === 'zepto').map((s) => s.total_paise));
+  const { bySource, byCategory, fromPool, ownPocket } = monthBreakdown(books, month);
   const mates = members.filter((m) => m.id in w); // members that month; later joiners don't get a 0-day row
 
   const name = monthName(month);
   const short = name.slice(0, 3);
   const days = daysIn(month);
-  const status = statusFor(month);
-  const split: { label: string; paise: number; tone: BlockTone }[] = [
-    { label: 'Zepto', paise: zepto, tone: 'stone' },
-    { label: monthSpends.some((s) => s.source === 'other') ? 'Local & other' : 'Local', paise: spent - zepto, tone: 'raised' },
-  ];
-  const pct = (p: number) => `${Math.round((p * 100) / spent)}%`;
+  const closed = (closes ?? []).find((x) => x.month === month);
+  const status = statusFor(month, closes ?? []);
+  const split = bySource.map((g) => ({ ...g, ...SOURCE[g.source] }));
 
   return (
     <Screen>
@@ -66,9 +85,9 @@ function Detail({ month }: { month: string }) {
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {split.map((s) => (
                 <Block
-                  key={s.tone}
+                  key={s.source}
                   tone={s.tone}
-                  accessibilityLabel={`${s.label} ${formatINR(s.paise)}, ${pct(s.paise)}`}
+                  accessibilityLabel={`${s.label} ${formatINR(s.paise)}, ${s.pct} percent`}
                   style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 20, gap: 2 }}>
                   <T size={13} weight="700">
                     {s.label}
@@ -77,23 +96,46 @@ function Detail({ month }: { month: string }) {
                     {formatINR(s.paise)}
                   </T>
                   <T size={13} weight="700" soft>
-                    {pct(s.paise)}
+                    {s.pct}%
                   </T>
                 </Block>
               ))}
             </View>
             <View aria-hidden style={{ flexDirection: 'row', gap: 3, height: 12 }}>
               {split.map((s) => (
-                // `raised` is a card step, too close to this block to read as a 12px bar: the line token stands in for it.
-                <View
-                  key={s.tone}
-                  style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: s.tone === 'raised' ? c.line : c[s.tone] }}
-                />
+                <View key={s.source} style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: barOf(c, s.tone) }} />
               ))}
             </View>
           </>
         )}
       </Block>
+
+      {byCategory.length > 0 && (
+        <Block style={{ gap: 10 }}>
+          <SectionLabel>What it went on</SectionLabel>
+          {byCategory.map((g) => (
+            <View key={g.category} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                <T size={15} weight="600" style={{ flex: 1 }} numberOfLines={1}>
+                  {g.category}
+                </T>
+                <T num size={15}>
+                  {formatINR(g.paise)}
+                </T>
+                <T size={13} weight="700" soft style={{ width: 40, textAlign: 'right' }}>
+                  {g.pct}%
+                </T>
+              </View>
+              <View aria-hidden style={{ height: 6, borderRadius: 3, backgroundColor: c.hair }}>
+                <View style={{ width: `${g.pct}%`, height: 6, borderRadius: 3, backgroundColor: c.stone }} />
+              </View>
+            </View>
+          ))}
+          <T size={13} soft>
+            By the category of each line's product; anything unitemised or uncategorised is Other.
+          </T>
+        </Block>
+      )}
 
       <Block style={{ gap: 0 }}>
         <SectionLabel>Shares · by days present</SectionLabel>
@@ -195,13 +237,50 @@ function Detail({ month }: { month: string }) {
         )}
       </Block>
 
-      <View
-        style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-        <Icon name={{ ios: 'lock', android: 'lock' }} size={14} color={c.muted} />
-        <T size={13} soft>
-          Read-only · {status === 'closed' ? 'closed' : `closes ${days} ${short}`}
-        </T>
+      <View style={{ alignItems: 'center', gap: 8, paddingBottom: 8 }}>
+        <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Icon name={{ ios: closed ? 'lock' : 'lock.open', android: closed ? 'lock' : 'lock_open' }} size={14} color={c.muted} />
+          <T size={13} soft style={{ textAlign: 'center' }}>
+            {closed
+              ? `Closed · frozen on ${dayLabel(istDate(closed.closed_at))} by ${nameOf(closed.closed_by)}`
+              : month === thisMonth()
+                ? `Read-only · ends ${days} ${short}`
+                : `Read-only · still provisional until ${holder?.display_name.split(' ')[0] ?? 'the treasurer'} closes ${name}`}
+          </T>
+        </View>
+        {closed && isTreasurer && <Reopen month={month} householdId={household.id} onReopened={reload} />}
       </View>
     </Screen>
+  );
+}
+
+/** The treasurer's way back in: quiet, because a reopened month can change everyone's settled share. */
+function Reopen({ month, householdId, onReopened }: { month: string; householdId: string; onReopened: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const full = `${monthName(month)} ${month.slice(0, 4)}`;
+
+  return (
+    <View style={{ alignItems: 'center', gap: 6 }}>
+      <ErrorText error={error} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Reopen ${full}`}
+        disabled={busy}
+        onPress={async () => {
+          if (!(await confirm(`Reopen ${full}?`, `Absences, spends and top-ups dated in ${monthName(month)} can be added and removed again, so shares everyone has already settled up on can change.`, 'Reopen'))) return;
+          setBusy(true);
+          setError(null);
+          const { error } = await supabase.rpc('reopen_month', { p_household_id: householdId, p_month: month });
+          if (error) setError(sayError(error));
+          else await onReopened();
+          setBusy(false);
+        }}
+        style={({ pressed }) => [{ minHeight: 48, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
+        <T size={15} weight="700" soft style={{ textDecorationLine: 'underline' }}>
+          {busy ? 'Reopening…' : `Reopen ${monthName(month)}`}
+        </T>
+      </Pressable>
+    </View>
   );
 }

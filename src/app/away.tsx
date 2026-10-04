@@ -5,12 +5,12 @@ import { addedLate, istDate, position, presenceWeights } from '@/domain/kitty';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
-import { confirm, dayLabel, monthLabel, thisMonth, today } from '@/lib/util';
+import { confirm, dayLabel, monthLabel, sayError, thisMonth, today } from '@/lib/util';
 import { Block, Chip, DateField, ErrorText, MagnetButton, Position, Rule, Screen, SectionLabel, T } from '@/ui/kit';
 
 /** Log an absence, and see where every mate stands. Names in alphabetical order: no ranking. */
 export default function Away() {
-  const { me, members, absences, household, books, name, reload } = useHousehold();
+  const { me, members, absences, household, books, name, holder, reload } = useHousehold();
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [busy, setBusy] = useState(false);
@@ -29,7 +29,7 @@ export default function Away() {
       setFrom(today());
       setTo(today());
     } catch (e) {
-      setError((e as Error).message);
+      setError(sayError(e, holder?.display_name));
     }
     setBusy(false);
   }
@@ -97,7 +97,10 @@ export default function Away() {
                       accessibilityLabel={`Remove absence ${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`}
                       onPress={async () => {
                         if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
-                        await supabase.from('member_absence').delete().eq('id', a.id);
+                        setError(null);
+                        // a closed month refuses the delete: say so, or the row would just sit there
+                        const { error } = await supabase.from('member_absence').delete().eq('id', a.id);
+                        if (error) return setError(sayError(error, holder?.display_name));
                         reload();
                       }}
                       style={({ pressed }) => [

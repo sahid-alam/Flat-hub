@@ -13,7 +13,7 @@ import { useHousehold, type SpendRow } from '@/lib/books';
 import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
-import { dateToTimestamp, today } from '@/lib/util';
+import { dateToTimestamp, sayError, today } from '@/lib/util';
 import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
 import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 import { usePutAway } from '@/ui/putaway';
@@ -63,7 +63,7 @@ async function readBase64(uri: string): Promise<string> {
 
 export default function ImportOrder() {
   const c = usePalette();
-  const { me, members, household, products, reload } = useHousehold();
+  const { me, members, household, products, holder, reload } = useHousehold();
   const putAway = usePutAway(); // above the early returns below: hooks run in the same order every render
   const [text, setText] = useState('');
   const [reading, setReading] = useState<string | null>(null); // what is being read, for the skeleton
@@ -259,7 +259,7 @@ export default function ImportOrder() {
     });
     if (error && !(await landed('spend', draft.id))) {
       setBusy(false);
-      return setError(error.message);
+      return setError(sayError(error, holder?.display_name));
     }
     // Teach the catalogue the names Zepto uses, so the next import matches straight away.
     // ponytail: best-effort, the spend is already saved; a missed alias only costs a re-match later

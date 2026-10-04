@@ -1,3 +1,4 @@
+import { isClosed, type Close } from '@/domain/kitty';
 import type { EntryRow, SpendRow } from '@/lib/books';
 import { monthOf, thisMonth } from '@/lib/util';
 import type { BlockTone } from '@/ui/kit';
@@ -21,5 +22,6 @@ const index = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.s
 const TONES: BlockTone[] = ['stone', 'brass', 'raised'];
 /** Card fill by months back from now, so the list and the opened month agree. */
 export const toneFor = (month: string): BlockTone => TONES[(((index(thisMonth()) - index(month)) % 3) + 3) % 3];
-export const statusFor = (month: string): string => (month >= thisMonth() ? 'provisional' : 'closed');
+/** A month is closed only once the treasurer has closed it; until then it can still move. */
+export const statusFor = (month: string, closes: Close[]): string => (isClosed(month, closes) ? 'closed' : 'provisional');
 export const daysIn = (month: string): number => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).getUTCDate();

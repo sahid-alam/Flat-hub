@@ -28,3 +28,12 @@ export function confirm(title: string, message: string, action: string): Promise
     ]),
   );
 }
+
+/**
+ * A save's error in flat words. The month-close triggers raise '<Month> <year> is closed' (P0001);
+ * everything else is already readable enough to show as it is.
+ */
+export function sayError(e: unknown, holder?: string | null): string {
+  const message = (e as { message?: string } | null)?.message ?? String(e ?? 'Something went wrong.');
+  return / is closed$/.test(message) ? `${message} — ask ${holder?.split(' ')[0] ?? 'the treasurer'} to reopen it` : message;
+}

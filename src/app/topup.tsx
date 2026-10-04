@@ -7,7 +7,7 @@ import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
-import { dateToTimestamp, today } from '@/lib/util';
+import { dateToTimestamp, sayError, today } from '@/lib/util';
 import { AmountBlock } from '@/ui/capture';
 import { Choice, DateField, ErrorText, Field, MagnetButton, Screen, SectionLabel, T } from '@/ui/kit';
 
@@ -15,7 +15,7 @@ const rupeesText = (paise: number) => upiAmount(paise).replace(/\.00$/, '');
 
 /** Record a top-up for any mate (the treasurer often records them as UPI pings arrive). */
 export default function RecordTopUp() {
-  const { me, members, household, books, reload } = useHousehold();
+  const { me, members, household, books, holder, reload } = useHousehold();
   const [member, setMember] = useState(me.id);
   const [amount, setAmount] = useState(rupeesText(suggestedTopup(books, me.id)));
   const [date, setDate] = useState(today());
@@ -41,7 +41,7 @@ export default function RecordTopUp() {
       await reload();
       router.back();
     } catch (e) {
-      setError((e as Error).message);
+      setError(sayError(e, holder?.display_name));
       setBusy(false);
     }
   }
