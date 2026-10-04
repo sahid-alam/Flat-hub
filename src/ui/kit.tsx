@@ -95,8 +95,10 @@ export const usePalette = (): Palette => (useColorScheme() === 'light' ? tokens.
 
 /** Bricolage Grotesque 800: every amount. */
 /** On web a focused TextInput draws Chrome's blue ring over our own border. Keep the ring (keyboard users
- *  need it) but in the theme's focus colour, offset clear of the field. */
-export const focusRing = (color: string) => ({ outlineColor: color, outlineWidth: 2, outlineOffset: 2 }) as const;
+ *  need it) but in the theme's focus colour, offset clear of the field. Web only: on native these are real
+ *  View style props and would draw the ring unconditionally, focused or not. */
+export const focusRing = (color: string) =>
+  Platform.OS === 'web' ? ({ outlineColor: color, outlineWidth: 2, outlineOffset: 2 } as const) : {};
 
 export const DISPLAY = 'BricolageGrotesque_800ExtraBold';
 export const DISPLAY_SEMI = 'BricolageGrotesque_700Bold';
