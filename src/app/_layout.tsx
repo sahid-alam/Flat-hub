@@ -45,7 +45,8 @@ function Routes() {
         <Stack.Screen name="topup" options={{ presentation: 'modal', title: 'Record a top-up' }} />
         <Stack.Screen name="away" options={{ title: 'Away' }} />
         <Stack.Screen name="reimburse" options={{ title: 'To reimburse' }} />
-        <Stack.Screen name="statement" options={{ title: 'Month statement' }} />
+        <Stack.Screen name="statement" options={{ title: 'Statements' }} />
+        <Stack.Screen name="statement/[month]" options={{ title: 'Statement' }} />
         <Stack.Screen name="mates" options={{ title: 'Mates' }} />
         <Stack.Screen name="favourites" options={{ title: 'Favourites' }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
