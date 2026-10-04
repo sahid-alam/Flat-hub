@@ -56,7 +56,7 @@ function CloseMonth({ month, householdId, onClosed }: { month: string; household
     const ok = await confirm(
       `Close ${full}?`,
       `Absences, spends and top-ups dated in ${short} can no longer be added or removed, so everyone's share is final.\n\nReversing an entry still works, and you can reopen the month.`,
-      'Close',
+      `Close ${short}`,
     );
     if (!ok) return;
     setBusy(true);

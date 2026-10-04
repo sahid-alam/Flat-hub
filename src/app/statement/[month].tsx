@@ -268,7 +268,7 @@ function Reopen({ month, householdId, onReopened }: { month: string; householdId
         outline
         disabled={busy}
         onPress={async () => {
-          if (!(await confirm(`Reopen ${full}?`, `Absences, spends and top-ups dated in ${monthName(month)} can be added and removed again, so shares everyone has already settled up on can change.`, 'Reopen'))) return;
+          if (!(await confirm(`Reopen ${full}?`, `Absences, spends and top-ups dated in ${monthName(month)} can be added and removed again, so shares everyone has already settled up on can change.`, `Reopen ${monthName(month)}`))) return;
           setBusy(true);
           setError(null);
           const { error } = await supabase.rpc('reopen_month', { p_household_id: householdId, p_month: month });
