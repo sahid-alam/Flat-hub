@@ -1,5 +1,8 @@
-import { Baloo2_600SemiBold, Baloo2_800ExtraBold, useFonts } from '@expo-google-fonts/baloo-2';
+import { BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
+import { Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
+import { Righteous_400Regular } from '@expo-google-fonts/righteous';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -7,7 +10,7 @@ import { useColorScheme } from 'react-native';
 
 import { BooksProvider, useBooks } from '@/lib/books';
 import '@/lib/invite'; // captures an invite code from the opening URL before the auth redirect
-import { DISPLAY, usePalette } from '@/ui/kit';
+import { UI, usePalette } from '@/ui/kit';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -23,12 +26,12 @@ function Routes() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: c.enamel },
+        headerStyle: { backgroundColor: c.ground },
         headerShadowVisible: false,
         headerTintColor: c.ink,
-        headerTitleStyle: { fontFamily: DISPLAY, fontSize: 20 },
+        headerTitleStyle: { fontFamily: UI['700'], fontSize: 17 },
         headerBackButtonDisplayMode: 'minimal',
-        contentStyle: { backgroundColor: c.enamel },
+        contentStyle: { backgroundColor: c.ground },
       }}>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
@@ -53,11 +56,25 @@ function Routes() {
 
 export default function RootLayout() {
   const scheme = useColorScheme();
-  const [fontsLoaded] = useFonts({ Baloo2_800ExtraBold, Baloo2_600SemiBold });
+  const c = usePalette();
+  const [fontsLoaded] = useFonts({
+    BricolageGrotesque_700Bold,
+    BricolageGrotesque_800ExtraBold,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Righteous_400Regular,
+  });
   if (!fontsLoaded) return null;
+  // Dark is the primary look; light (ivory) only when the phone asks for it.
+  const base = scheme === 'light' ? DefaultTheme : DarkTheme;
+  const theme = {
+    ...base,
+    colors: { ...base.colors, background: c.ground, card: c.ground, text: c.ink, border: c.hair, primary: c.accentText },
+  };
   return (
-    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <StatusBar style="auto" />
+    <ThemeProvider value={theme}>
+      <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
       <BooksProvider>
         <Routes />
       </BooksProvider>

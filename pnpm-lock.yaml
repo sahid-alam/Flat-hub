@@ -8,9 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@expo-google-fonts/baloo-2':
+      '@expo-google-fonts/bricolage-grotesque':
+        specifier: ^0.4.1
+        version: 0.4.1
+      '@expo-google-fonts/manrope':
         specifier: ^0.4.2
         version: 0.4.2
+      '@expo-google-fonts/righteous':
+        specifier: ^0.4.1
+        version: 0.4.1
       '@expo/ui':
         specifier: ~57.0.21
         version: 57.0.21(@babel/core@7.29.7)(@types/react@19.2.18)(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
@@ -562,11 +568,17 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@expo-google-fonts/baloo-2@0.4.2':
-    resolution: {integrity: sha512-uvrw1I+sP72PY8xROJQ6CMiGHu9+WJCdi72Q+OiWpQ3sKsIRyIEXimDfgUnkk2vpWVej0JX9fLc87iDmjKE86A==}
+  '@expo-google-fonts/bricolage-grotesque@0.4.1':
+    resolution: {integrity: sha512-uijLLg+thOrFgw+gXtYA3dQJTBqqqleabcNFpamaYXqUUcbFe0J18C+4nfL0CyGzSJUicxUBLY4Zv7jdHmTGMA==}
+
+  '@expo-google-fonts/manrope@0.4.2':
+    resolution: {integrity: sha512-BZsKe8d9BJrVnIQIZcTS7/Kac0TbXnqs/+8EBSiQxrmK6GoCO6eTkmr50D1weIk/EoF20pTmAkpWICnovATr/g==}
 
   '@expo-google-fonts/material-symbols@0.4.48':
     resolution: {integrity: sha512-aZztj44PyA/sj3TXSwwpLJwqMlTUJ49okbZJYURzEcuERxMQB0KbX7RrLBi8WJnuWz5HFOLlTRxORrJfNnUPNQ==}
+
+  '@expo-google-fonts/righteous@0.4.1':
+    resolution: {integrity: sha512-oWlxXmRNYRN5aHW2cLJopUTr7T+mNRGfKjBeQlYLbOIf1yn6UF5kcg9PqkD6gG8BG1pKxzT3jXzcRvFSRL1HKA==}
 
   '@expo/cli@57.0.27':
     resolution: {integrity: sha512-Jauk4chxmpVG5ElrMLTCwjFP20jbYU7PB4l3LYV8j+4e/3HU5jdl7qTQ4eVy1AaDUE9Ia2NCQ5A9kar2V1gaLg==}
@@ -4573,9 +4585,13 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@expo-google-fonts/baloo-2@0.4.2': {}
+  '@expo-google-fonts/bricolage-grotesque@0.4.1': {}
+
+  '@expo-google-fonts/manrope@0.4.2': {}
 
   '@expo-google-fonts/material-symbols@0.4.48': {}
+
+  '@expo-google-fonts/righteous@0.4.1': {}
 
   '@expo/cli@57.0.27(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.16)(expo-constants@57.0.20)(expo-font@57.0.4)(expo-router@57.0.24)(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)':
     dependencies:
@@ -5358,9 +5374,7 @@ snapshots:
       metro-runtime: 0.84.6
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

@@ -1,11 +1,11 @@
 {
   "name": "FlatHub",
   "short_name": "FlatHub",
-  "description": "The flat's kitty, on the fridge door.",
+  "description": "The flat's kitty, groceries and duties.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ECEEEA",
-  "theme_color": "#ECEEEA",
+  "background_color": "#121214",
+  "theme_color": "#121214",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
