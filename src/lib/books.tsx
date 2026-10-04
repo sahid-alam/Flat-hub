@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { Absence, Books, PoolEntry, Spend } from '@/domain/kitty';
+import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
 export type Household = {
@@ -21,7 +22,16 @@ export type MemberRow = {
 };
 export type AbsenceRow = Absence & { id: string; created_at: string };
 export type SpendRow = Spend & { source: 'zepto' | 'local' | 'other'; store_name: string | null; created_at: string };
-export type LineRow = { id: string; spend_id: string; name: string; line_total_paise: number; kind: 'item' | 'fee' | 'discount' };
+export type LineRow = {
+  id: string;
+  spend_id: string;
+  name: string;
+  line_total_paise: number;
+  kind: 'item' | 'fee' | 'discount';
+  product_id: string | null;
+  qty: number;
+  unit: string | null;
+};
 export type EntryRow = PoolEntry & { id: string; occurred_at: string; note: string | null; spend_id: string | null };
 export type ProductRow = {
   id: string;
@@ -31,6 +41,26 @@ export type ProductRow = {
   default_price_paise: number | null;
   track_stock: boolean;
   category: string | null;
+  base_unit: 'g' | 'ml' | 'pc';
+  min_qty: number | null;
+};
+
+// The domain types carry the fields the stock maths reads; the rows add what only the DB and the UI need.
+export type LotRow = Lot & { household_id: string; spend_line_id: string | null; created_at: string };
+export type MoveRow = Move & {
+  id: string;
+  household_id: string;
+  reason: 'purchase' | 'consume' | 'discard' | 'adjust';
+  member_id: string;
+  occurred_at: string;
+};
+export type UomRow = Uom & { household_id: string };
+export type ShoppingRow = ManualItem & {
+  id: string;
+  household_id: string;
+  added_by: string;
+  done_by_spend_line_id: string | null;
+  created_at: string;
 };
 
 type Data = {
@@ -42,6 +72,10 @@ type Data = {
   lines: LineRow[];
   entries: EntryRow[];
   products: ProductRow[];
+  lots: LotRow[];
+  moves: MoveRow[];
+  uoms: UomRow[];
+  shopping: ShoppingRow[];
 };
 
 type Ctx = {
@@ -58,7 +92,7 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries, products] = await Promise.all([
+  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping] = await Promise.all([
     supabase.from('household').select('*').eq('id', h).single(),
     supabase.from('member').select('*').eq('household_id', h).order('display_name'),
     supabase.from('member_absence').select('*').eq('household_id', h).order('from_date', { ascending: false }),
@@ -67,12 +101,22 @@ async function load(userId: string): Promise<Data | null> {
     supabase.from('pool_entry').select('*').eq('household_id', h).order('occurred_at', { ascending: false }),
     supabase
       .from('product')
-      .select('id, name, aliases, favourite, default_price_paise, track_stock, category')
+      .select('id, name, aliases, favourite, default_price_paise, track_stock, category, base_unit, min_qty')
       .eq('household_id', h)
       .order('name'),
+    supabase.from('lot').select('*').eq('household_id', h).order('received_at'),
+    supabase.from('stock_move').select('*').eq('household_id', h).order('occurred_at'),
+    supabase.from('product_uom').select('*').eq('household_id', h),
+    supabase
+      .from('shopping_item')
+      .select('*')
+      .eq('household_id', h)
+      .order('done_at', { ascending: true, nullsFirst: true })
+      .order('created_at'),
   ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
-  for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
+  for (const r of [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping])
+    if (r.error) throw r.error;
   return {
     household: household.data,
     me,
@@ -82,6 +126,10 @@ async function load(userId: string): Promise<Data | null> {
     lines: lines.data!,
     entries: entries.data!,
     products: products.data!,
+    lots: lots.data!,
+    moves: moves.data!,
+    uoms: uoms.data!,
+    shopping: shopping.data!,
   };
 }
 

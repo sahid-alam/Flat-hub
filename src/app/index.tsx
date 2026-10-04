@@ -6,6 +6,7 @@ import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { poolCash, position, suggestedTopup, unreimbursed } from '@/domain/kitty';
+import { shoppingList } from '@/domain/stock';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
@@ -42,6 +43,7 @@ export default function KittyHome() {
   const h = useHousehold();
   const [picking, setPicking] = useState(false); // the + Add pill steps aside while a quick-add confirm is open
   const { books, me, members, holder, isTreasurer, entries, spends, household, reload } = h;
+  const short = shoppingList(h.products, h.lots, h.moves, h.shopping);
   useFocusEffect(
     useCallback(() => {
       reload();
@@ -180,6 +182,15 @@ export default function KittyHome() {
             label="Record a top-up"
             icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}
             onPress={() => router.push('/topup')}
+          />
+          <Rule />
+          <Row label="Fridge" icon={{ ios: 'refrigerator', android: 'kitchen' }} onPress={() => router.push('/fridge')} />
+          <Rule />
+          <Row
+            label="Shopping"
+            icon={{ ios: 'cart', android: 'shopping_cart' }}
+            detail={short.length ? String(short.length) : 'none'}
+            onPress={() => router.push('/shopping')}
           />
           <Rule />
           <Row label="Away" icon={{ ios: 'airplane', android: 'flight' }} onPress={() => router.push('/away')} />
