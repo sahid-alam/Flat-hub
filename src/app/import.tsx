@@ -3,8 +3,8 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, View } from 'react-native';
 
 import { matchProduct, normalizeExtraction, normalizeName, type Extraction } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
@@ -14,7 +14,8 @@ import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
-import { Choice, DateField, ErrorText, Field, Icon, MagnetButton, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
+import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 type Kind = 'item' | 'fee' | 'discount';
 type Line = {
@@ -63,7 +64,8 @@ export default function ImportOrder() {
   const c = usePalette();
   const { me, members, household, products, reload } = useHousehold();
   const [text, setText] = useState('');
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState<string | null>(null); // what is being read, for the skeleton
+  const run = useRef(0); // bumped by Cancel: a reading that comes back late is dropped
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [paidBy, setPaidBy] = useState(me.id);
@@ -80,11 +82,13 @@ export default function ImportOrder() {
   async function read(get: () => Promise<ExtractInput | null>) {
     setReadError(null);
     setError(null);
+    const mine = ++run.current;
     try {
       const input = await get();
       if (!input) return; // picker cancelled
-      setReading(true);
+      setReading(input.type === 'pdf' ? 'the invoice' : input.type === 'image' ? 'the screenshot' : 'your list');
       const raw = await extractSpend(input);
+      if (mine !== run.current) return; // cancelled while reading
       const { extraction: x, problems } = normalizeExtraction(raw);
       if (!x) throw new Error(problems.join(' ') || "Couldn't find an order in that.");
       setDraft({
@@ -106,9 +110,9 @@ export default function ImportOrder() {
         })),
       });
     } catch (e) {
-      setReadError(e instanceof Error ? e.message : String(e));
+      if (mine === run.current) setReadError(e instanceof Error ? e.message : String(e));
     } finally {
-      setReading(false);
+      if (mine === run.current) setReading(null);
     }
   }
 
@@ -136,24 +140,34 @@ export default function ImportOrder() {
 
   // ---------------------------------------------------------------- input stage
 
+  if (reading) {
+    return (
+      <Screen>
+        <ReadingSkeleton what={reading} />
+        <MagnetButton
+          label="Cancel"
+          outline
+          onPress={() => {
+            run.current++; // ponytail: the request still runs to the end; its answer is just ignored
+            setReading(null);
+          }}
+        />
+      </Screen>
+    );
+  }
+
   if (!draft) {
     return (
       <Screen>
         <T soft>Pick the Zepto invoice or a screenshot of the order. You'll check every line before anything is saved.</T>
-        <MagnetButton
-          label="Invoice PDF or image"
-          icon={{ ios: 'doc', android: 'description' }}
-          disabled={reading}
-          onPress={pickFile}
-        />
+        <MagnetButton label="Invoice PDF or image" icon={{ ios: 'doc', android: 'description' }} onPress={pickFile} />
         <MagnetButton
           label="Screenshot from photos"
           outline
           icon={{ ios: 'photo', android: 'image' }}
-          disabled={reading}
           onPress={pickScreenshot}
         />
-        <Slip>
+        <Block>
           <Field
             label="Or type it"
             value={text}
@@ -165,26 +179,20 @@ export default function ImportOrder() {
           <MagnetButton
             label="Read it"
             outline
-            disabled={reading || !text.trim()}
+            disabled={!text.trim()}
             onPress={() => read(async () => ({ type: 'text', text: text.trim() }))}
           />
-        </Slip>
+        </Block>
 
-        {reading && (
-          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-            <ActivityIndicator color={c.ink} />
-            <T soft>Reading the order…</T>
-          </View>
-        )}
         {readError && (
-          <Slip magnet="tomato">
-            <T weight="600">Couldn't read that</T>
+          <Block>
+            <T weight="700">Couldn't read that</T>
             <ErrorText error={readError} />
             <T size={15} soft>
               Reading orders may not be set up yet. You can still add the spend by hand.
             </T>
             <MagnetButton label="Add it by hand" outline onPress={() => router.replace('/spend')} />
-          </Slip>
+          </Block>
         )}
       </Screen>
     );
@@ -265,39 +273,41 @@ export default function ImportOrder() {
     router.back();
   }
 
+  const blankLine = (): Line => ({ id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false });
+
   return (
     <Screen>
-      <Field
-        label="Amount paid (₹)"
-        big
-        value={draft.total}
-        onChangeText={(t) => set({ total: t, totalGuessed: false })}
-        keyboardType="decimal-pad"
-        placeholder="0"
-      />
+      <AmountBlock label="Amount paid" value={draft.total} onChangeText={(t) => set({ total: t, totalGuessed: false })} />
 
-      {draft.totalGuessed && (
-        <View style={{ gap: 4 }}>
-          <T size={15} weight="600" color={c.tomato}>
-            The total wasn't on the bill, so this is the lines' sum. Check what was actually paid (fees, coupons).
-          </T>
-          {total !== null && (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => set({ totalGuessed: false })}
-              style={{ minHeight: 48, justifyContent: 'center' }}>
-              <T size={15} weight="600" color={c.blue}>
-                Yes, {formatINR(total)} is what we paid
-              </T>
-            </Pressable>
-          )}
-        </View>
-      )}
+      {/* The V1 graft: payer and source sit at the top, so the card says who paid before it lists what. */}
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Paid by</SectionLabel>
+        <Choice
+          value={paidBy}
+          onChange={setPaidBy}
+          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
+        />
+      </View>
 
       <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Where from
-        </T>
+        <SectionLabel>Paid from</SectionLabel>
+        <Choice
+          value={paidFrom}
+          onChange={setPaidFrom}
+          options={[
+            { value: 'pool', label: 'From pool' },
+            { value: 'personal', label: 'Own pocket' },
+          ]}
+        />
+        {paidFrom === 'personal' && (
+          <T size={15} soft>
+            It goes on the treasurer's "to reimburse" list until it's paid back.
+          </T>
+        )}
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <SectionLabel>Where from</SectionLabel>
         <Choice
           value={draft.source}
           onChange={(source) => set({ source })}
@@ -313,45 +323,8 @@ export default function ImportOrder() {
       )}
       <DateField label="Bought on" value={draft.date} onChange={(date) => date <= today() && set({ date })} />
 
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid by
-        </T>
-        <Choice
-          value={paidBy}
-          onChange={setPaidBy}
-          options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
-        />
-      </View>
-
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Paid from
-        </T>
-        <Choice
-          value={paidFrom}
-          onChange={setPaidFrom}
-          options={[
-            { value: 'pool', label: 'The kitty' },
-            { value: 'personal', label: 'Own pocket' },
-          ]}
-        />
-        {paidFrom === 'personal' && (
-          <T size={15} soft>
-            It goes on the treasurer's "to reimburse" list until it's paid back.
-          </T>
-        )}
-      </View>
-
-      <Slip magnet={ready ? 'green' : 'tomato'}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <T weight="600">Check the lines</T>
-          {total !== null && (
-            <T size={15} weight="600" color={ready ? c.green : c.tomato}>
-              {ready ? 'Adds up' : balanced ? 'Check the total' : `${formatINR(linesTotal)} of ${formatINR(total)}`}
-            </T>
-          )}
-        </View>
+      <Block>
+        <SectionLabel>Check the lines</SectionLabel>
         {draft.lines.map((l, i) => {
           const product = products.find((p) => p.id === l.product_id);
           return (
@@ -372,7 +345,7 @@ export default function ImportOrder() {
                   accessibilityLabel={`Remove line ${i + 1}`}
                   onPress={() => set({ lines: draft.lines.filter((_, j) => j !== i) })}
                   style={{ width: 48, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.inkSoft} />
+                  <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.muted} />
                 </Pressable>
               </View>
               <Choice
@@ -387,8 +360,8 @@ export default function ImportOrder() {
               {l.kind === 'item' &&
                 (product ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <T size={15} weight="600" color={c.green} style={{ flex: 1 }}>
-                      {l.confirmed ? product.name : `Is it ${product.name}?`}
+                    <T size={15} weight="600" color={c.positive} style={{ flex: 1 }}>
+                      {l.confirmed ? `Matched: ${product.name}` : `Is it ${product.name}?`}
                     </T>
                     {!l.confirmed && (
                       <Pressable
@@ -396,7 +369,7 @@ export default function ImportOrder() {
                         accessibilityLabel={`Yes, line ${i + 1} is ${product.name}`}
                         onPress={() => update(i, { confirmed: true })}
                         style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
-                        <T size={15} weight="600" color={c.blue}>
+                        <T size={15} weight="700" color={c.accentText}>
                           Yes
                         </T>
                       </Pressable>
@@ -406,14 +379,14 @@ export default function ImportOrder() {
                       accessibilityLabel={`Line ${i + 1} is not ${product.name}`}
                       onPress={() => update(i, { product_id: null, confirmed: false })}
                       style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' }}>
-                      <T size={15} weight="600" color={c.blue}>
+                      <T size={15} weight="700" color={c.accentText}>
                         Not it
                       </T>
                     </Pressable>
                   </View>
                 ) : (
                   <T size={15} soft>
-                    New, not in your products yet
+                    New product: pick or create
                   </T>
                 ))}
             </View>
@@ -423,21 +396,72 @@ export default function ImportOrder() {
           label="Add a line"
           outline
           icon={{ ios: 'plus', android: 'add' }}
-          onPress={() =>
-            set({ lines: [...draft.lines, { id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false }] })
-          }
+          onPress={() => set({ lines: [...draft.lines, blankLine()] })}
         />
-        {problems.map((p, i) => (
-          <T key={i} size={15} weight="500" color={balanced ? c.inkSoft : c.tomato}>
-            {p}
+
+        {/* The double rule: a bill's own way of saying "and that is the total". */}
+        <View style={{ gap: 3, marginTop: 4 }}>
+          <Rule />
+          <Rule />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <T weight="700">Total paid</T>
+          <T num size={22}>
+            {total === null ? '—' : formatINR(total)}
           </T>
-        ))}
-      </Slip>
+        </View>
+      </Block>
+
+      {/* The bill carried no total, so this is the lines' sum: a mate has to agree to it before Save wakes up. */}
+      {draft.totalGuessed ? (
+        <WarnNote>
+          <T size={15} weight="700" color={c.warnFg}>
+            The total wasn't on the bill
+          </T>
+          <T size={15} color={c.warnFg}>
+            This is the lines' sum. Check what was actually paid (fees, coupons).
+          </T>
+          {total !== null && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => set({ totalGuessed: false })}
+              style={{ minHeight: 48, justifyContent: 'center' }}>
+              <T size={15} weight="700" color={c.warnFg}>
+                Yes, {formatINR(total)} is what we paid
+              </T>
+            </Pressable>
+          )}
+        </WarnNote>
+      ) : (
+        draft.lines.length > 0 &&
+        total !== null &&
+        linesValid && (
+          <BalanceBar
+            total={total}
+            lines={linesTotal}
+            onFix={() => set({ lines: [...draft.lines, { ...blankLine(), ...roundingLine(total - linesTotal) }] })}
+          />
+        )
+      )}
+
+      {problems.map((p, i) => (
+        <T key={i} size={15} soft>
+          {p}
+        </T>
+      ))}
 
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : total ? `Save ${formatINR(total)}` : 'Save'}
-        color="tomato"
+        label={
+          busy
+            ? 'Saving…'
+            : !balanced
+              ? 'Save once lines add up'
+              : draft.totalGuessed
+                ? 'Check the total'
+                : `Save ${formatINR(total!)}`
+        }
+        color="brass"
         disabled={busy || !ready}
         onPress={save}
       />

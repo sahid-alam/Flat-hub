@@ -8,7 +8,8 @@ import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
-import { Choice, DateField, ErrorText, Field, MagnetButton, Screen, T } from '@/ui/kit';
+import { AmountBlock } from '@/ui/capture';
+import { Choice, DateField, ErrorText, Field, MagnetButton, Screen, SectionLabel, T } from '@/ui/kit';
 
 const rupeesText = (paise: number) => upiAmount(paise).replace(/\.00$/, '');
 
@@ -48,9 +49,7 @@ export default function RecordTopUp() {
   return (
     <Screen>
       <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Who put in
-        </T>
+        <SectionLabel>Who put in</SectionLabel>
         <Choice
           value={member}
           onChange={(m) => {
@@ -60,7 +59,8 @@ export default function RecordTopUp() {
           options={members.map((m) => ({ value: m.id, label: m.id === me.id ? `${m.display_name} (me)` : m.display_name }))}
         />
       </View>
-      <Field label="Amount (₹)" big value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="2000" />
+      {/* after the mate: picking one resets the amount to their suggestion */}
+      <AmountBlock label="Amount put in" value={amount} onChangeText={setAmount} placeholder="2000" />
       <T size={15} soft>
         Suggested {formatINR(suggestedTopup(books, member))}: the monthly {formatINR(household.monthly_topup_paise)} less any credit.
       </T>
@@ -69,7 +69,7 @@ export default function RecordTopUp() {
       <ErrorText error={error} />
       <MagnetButton
         label={busy ? 'Saving…' : paise ? `Record ${formatINR(paise)}` : 'Record'}
-        color="green"
+        color="brass"
         disabled={busy || !paise}
         onPress={save}
       />
