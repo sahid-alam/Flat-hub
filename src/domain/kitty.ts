@@ -11,14 +11,19 @@ export type Spend = {
   total_paise: number;
   occurred_at: string;
   reverses_id: string | null;
+  source?: 'zepto' | 'local' | 'other'; // the rows carry it; the share maths doesn't care
 };
 export type SpendLine = { line_total_paise: number; kind: 'item' | 'fee' | 'discount' };
+/** What the breakdown needs of a spend line and the product behind it. */
+export type BreakdownLine = { spend_id: string; line_total_paise: number; product_id: string | null };
+export type BreakdownProduct = { id: string; category: string | null };
 export type PoolEntry = {
   kind: 'contribution' | 'reimbursement';
   member_id: string;
   amount_paise: number;
   reverses_id: string | null;
   spend_id?: string | null; // reimbursement: the own-pocket spend it pays back
+  occurred_at?: string; // the rows carry it; only closableMonths reads it
 };
 export type Books = {
   members: Member[];
@@ -26,6 +31,8 @@ export type Books = {
   spends: Spend[];
   entries: PoolEntry[];
   monthlyTopupPaise: number;
+  lines?: BreakdownLine[]; // only monthBreakdown reads these two
+  products?: BreakdownProduct[];
 };
 
 const DAY = 86_400_000;
@@ -94,13 +101,18 @@ export function presenceWeights(month: string, members: Member[], absences: Abse
   return sum(Object.values(w)) === 0 ? membership : w;
 }
 
+/** A reversal is anchored to its target, so it lands in the month its share was allocated in. */
+function anchors<S extends Spend>(spends: S[]): (s: S) => S {
+  const byId = new Map(spends.map((s) => [s.id, s]));
+  return (s) => (s.reverses_id ? (byId.get(s.reverses_id) ?? s) : s);
+}
+
 /** Spend per IST month; a reversal counts in its target's month so it nets to zero. */
 function spendByMonth(spends: Spend[]): Map<string, number> {
-  const byId = new Map(spends.map((s) => [s.id, s]));
+  const anchor = anchors(spends);
   const months = new Map<string, number>();
   for (const s of spends) {
-    const anchor = s.reverses_id ? (byId.get(s.reverses_id) ?? s) : s;
-    const month = istDate(anchor.occurred_at).slice(0, 7);
+    const month = istDate(anchor(s).occurred_at).slice(0, 7);
     months.set(month, (months.get(month) ?? 0) + s.total_paise);
   }
   return months;
@@ -149,3 +161,72 @@ export const linesBalance = (totalPaise: number, lines: SpendLine[]): boolean =>
 
 /** An absence logged after it started is flagged "added late" on the statement. */
 export const addedLate = (a: Absence): boolean => !!a.created_at && istDate(a.created_at) > a.from_date;
+
+// ─── Month close (M5) ───────────────────────────────────────────────────────
+
+export type Close = { month: string };
+
+export const isClosed = (month: string, closes: Close[]): boolean => closes.some((c) => c.month === month);
+
+/** Months with activity, strictly before the current IST month, not yet closed. Oldest first. */
+export function closableMonths(b: Books, closes: Close[], nowIso: string): string[] {
+  const now = istDate(nowIso).slice(0, 7);
+  const active = new Set(spendByMonth(b.spends).keys());
+  for (const e of b.entries) if (e.occurred_at) active.add(istDate(e.occurred_at).slice(0, 7));
+  return [...active].filter((m) => m < now && !isClosed(m, closes)).sort();
+}
+
+/** Integer percentages of `total` that sum to exactly 100, by the same largest-remainder rule as allocate(). */
+function pcts<T extends { paise: number }>(groups: T[]): (T & { pct: number })[] {
+  // allocate() needs non-negative weights: a net-negative group (mostly discounts) reads 0% and the
+  // positive groups share the 100 between them. A fully-reversed month reads 0% everywhere.
+  const weights = Object.fromEntries(groups.map((g, i) => [String(i), Math.max(0, g.paise)]));
+  const share = sum(Object.values(weights)) > 0 ? allocate(100, weights) : {};
+  return groups.map((g, i) => ({ ...g, pct: share[String(i)] ?? 0 }));
+}
+
+const SOURCES: NonNullable<Spend['source']>[] = ['zepto', 'local', 'other'];
+
+/**
+ * Where a month's money went: by store source and by product category, plus pool vs own pocket.
+ * Lines and products ride on Books; without them everything falls under 'Other'.
+ * A reversal carries its target's lines negated, so it nets out of both breakdowns.
+ */
+export function monthBreakdown(b: Books, month: string) {
+  const anchor = anchors(b.spends);
+  const mine = b.spends.filter((s) => istDate(anchor(s).occurred_at).slice(0, 7) === month);
+  const total = sum(mine.map((s) => s.total_paise));
+
+  const bySource = pcts(
+    SOURCES.map((source) => ({
+      source,
+      paise: sum(mine.filter((s) => (s.source ?? 'other') === source).map((s) => s.total_paise)),
+    })).filter((g) => g.paise !== 0),
+  );
+
+  const category = new Map((b.products ?? []).map((p) => [p.id, p.category || 'Other']));
+  const linesOf = (id: string) => (b.lines ?? []).filter((l) => l.spend_id === id);
+  const cats = new Map<string, number>();
+  for (const s of mine) {
+    const own = linesOf(s.id);
+    // a reversal usually has no lines of its own: reverse the target's
+    const lines = own.length || !s.reverses_id ? own : linesOf(s.reverses_id).map((l) => ({ ...l, line_total_paise: -l.line_total_paise }));
+    const add = (key: string, paise: number) => cats.set(key, (cats.get(key) ?? 0) + paise);
+    if (lines.length === 0) add('Other', s.total_paise); // unitemised: the whole spend
+    else {
+      for (const l of lines) add(l.product_id ? (category.get(l.product_id) ?? 'Other') : 'Other', l.line_total_paise);
+      add('Other', s.total_paise - sum(lines.map((l) => l.line_total_paise))); // lines may not cover the total
+    }
+  }
+  const byCategory = pcts(
+    [...cats].map(([category, paise]) => ({ category, paise })).filter((g) => g.paise !== 0).sort((x, y) => y.paise - x.paise),
+  );
+
+  return {
+    bySource,
+    byCategory,
+    fromPool: sum(mine.filter((s) => s.paid_from === 'pool').map((s) => s.total_paise)),
+    ownPocket: sum(mine.filter((s) => s.paid_from === 'personal').map((s) => s.total_paise)),
+    total,
+  };
+}
