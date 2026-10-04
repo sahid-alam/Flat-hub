@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeExtraction, normalizeName, matchProduct, type ProductLike } from './extraction.ts';
+import { exactProduct, normalizeExtraction, normalizeName, matchProduct, type ProductLike } from './extraction.ts';
 import { linesBalance } from './kitty.ts';
 
 // What the LLM might hand back for a Zepto order: sloppy kinds/signs, a ₹ string, an empty row.
@@ -95,4 +95,11 @@ test('matchProduct: alias, word overlap, and null when unsure', () => {
   assert.equal(matchProduct('Amul Taaza Toned Milk 500ml', products), null); // 1 of 4 words: unsure
   assert.equal(matchProduct('Milk Bread', products), null); // ties two products
   assert.equal(matchProduct('', products), null);
+});
+
+// /spend saves product_id with no confirm card, and spend_line can never be corrected.
+test('exactProduct: names and aliases only, never a guess', () => {
+  assert.equal(exactProduct('Amul Butter 500g', products)?.id, 'butter'); // alias
+  assert.equal(exactProduct('Aashirvaad Wheat Atta 5 kg', products), null); // fuzzy: not ours to assume
+  assert.equal(exactProduct('', products), null);
 });

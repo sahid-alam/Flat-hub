@@ -111,11 +111,19 @@ export function normalizeName(s: string): string {
 
 const tokens = (s: string): Set<string> => new Set(normalizeName(s).split(' ').filter(Boolean));
 
-/** Exact normalized name/alias first, then the best word overlap (Jaccard ≥ 0.5). Null when nothing fits or two products tie. */
+/** Exact normalized name or alias only. Safe to use without a confirm card. */
+export function exactProduct<P extends ProductLike>(lineName: string, products: P[]): P | null {
+  const key = normalizeName(lineName);
+  if (!key) return null;
+  return products.find((p) => [p.name, ...p.aliases].some((n) => normalizeName(n) === key)) ?? null;
+}
+
+/** Exact name/alias first, then the best word overlap (Jaccard ≥ 0.5). Null when nothing fits or two products tie.
+ *  The fuzzy half is a guess, so only /import — which shows a confirm card — may use this. */
 export function matchProduct<P extends ProductLike>(lineName: string, products: P[]): P | null {
   const key = normalizeName(lineName);
   if (!key) return null;
-  const exact = products.find((p) => [p.name, ...p.aliases].some((n) => normalizeName(n) === key));
+  const exact = exactProduct(lineName, products);
   if (exact) return exact;
 
   // ponytail: O(products × names) scan; fine for a flat's few hundred products.

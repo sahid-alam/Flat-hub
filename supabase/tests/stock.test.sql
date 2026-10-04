@@ -2,7 +2,7 @@
 -- put_away is idempotent, and a shopping item can be ticked off and un-ticked.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(20);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -52,6 +52,13 @@ select public.put_away('[{"id":"77777777-0000-7000-8000-000000000001",
   "spend_line_id":"55555555-0000-7000-8000-000000000001","location":"pantry","expiry_date":"2026-12-31","qty":5000}]');
 select is((select count(*) from public.lot), 1::bigint, 'put_away is idempotent on lot ids');
 select is((select sum(delta_qty) from public.stock_move), 5000::numeric, 'put_away is idempotent on the ledger');
+
+-- a quantity that rounds to zero would leave a lot with no opening move, invisible on every screen
+select throws_ok($$ select public.put_away('[{"id":"77777777-0000-7000-8000-000000000006",
+  "household_id":"11111111-0000-7000-8000-000000000001","product_id":"66666666-0000-7000-8000-000000000001",
+  "location":"pantry","qty":0.0004}]') $$,
+  '23514', null, 'put_away rejects a quantity that rounds to zero');
+select is((select count(*) from public.lot), 1::bigint, 'and the lot it would have made is rolled back');
 
 -- ---------------------------------------------------------------- insert-only ledger
 

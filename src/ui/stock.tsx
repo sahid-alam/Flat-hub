@@ -8,10 +8,13 @@ import { T, usePalette } from '@/ui/kit';
 export type { LotRow, MoveRow } from '@/lib/books';
 export type StockProductRow = ProductRow;
 
+/** Days: at or under this, the expiry chip turns warm. Shared by /fridge and the home Fridge row. */
+export const SOON = 2;
+
 /** Lots, the stock_move ledger and the products behind them — all from the one household load. */
 export function useStock() {
   const { lots, moves, products, reload } = useHousehold();
-  return { lots, moves, products, loading: false, error: null as string | null, reload };
+  return { lots, moves, products, reload };
 }
 
 /** 1200 g → "1.2 kg", 1800 ml → "1.8 L", 4 pc → "4 pc". Base units only; the DB holds 3 decimals. */
@@ -40,18 +43,6 @@ export function WarnChip({ label }: { label: string }) {
     <View style={{ alignSelf: 'flex-start', borderRadius: 9999, backgroundColor: c.warnBg, paddingHorizontal: 8, paddingVertical: 2 }}>
       <T size={12} weight="700" color={c.warnFg} style={{ lineHeight: 16 }}>
         {label}
-      </T>
-    </View>
-  );
-}
-
-/** The same warm tone as a block of prose: "this unopened pack expires before the opened one". */
-export function WarnNote({ children }: { children: string }) {
-  const c = usePalette();
-  return (
-    <View style={{ borderRadius: 14, backgroundColor: c.warnBg, paddingHorizontal: 12, paddingVertical: 8 }}>
-      <T size={13} weight="600" color={c.warnFg}>
-        {children}
       </T>
     </View>
   );
@@ -86,11 +77,13 @@ export function ActionButton({
           borderColor: disabled ? c.hair : c.line,
           alignItems: 'center',
           justifyContent: 'center',
-          paddingHorizontal: 8,
+          paddingHorizontal: 4,
         },
         pressed && { transform: [{ scale: 0.97 }] },
       ]}>
-      <T size={15} weight="700" color={disabled ? c.muted : c.ink}>
+      {/* react-native-web ignores adjustsFontSizeToFit, so the longest label ("Threw away") is
+          fitted by type size and padding rather than by shrinking at runtime. */}
+      <T size={14} weight="700" numberOfLines={1} color={disabled ? c.muted : c.ink}>
         {label}
       </T>
     </Pressable>

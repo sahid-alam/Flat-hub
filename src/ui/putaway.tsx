@@ -5,6 +5,7 @@
 // are minted once per sheet, so a retry after a lost response is a complete no-op.
 import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toBase } from '@/domain/stock';
 import { useHousehold, type ProductRow } from '@/lib/books';
@@ -24,7 +25,9 @@ export type PutAwayLine = {
   kind: 'item' | 'fee' | 'discount';
 };
 
-type Draft = { lotId: string; line: PutAwayLine; product: ProductRow; location: Location; expiry: string; qty: string };
+// `guess` is the opening quantity the sheet started with: the Skip path falls back to it, so a mate
+// who clears the field and escapes still gets a sane lot instead of a stuck modal.
+type Draft = { lotId: string; line: PutAwayLine; product: ProductRow; location: Location; expiry: string; qty: string; guess: number };
 
 /** Where a product goes by default. Category is free text, so this reads it loosely. */
 function defaultLocation(category: string | null): Location {
@@ -70,15 +73,18 @@ export function usePutAway() {
       const rest: string[] = [];
       for (const line of lines) {
         const product = line.kind === 'item' && line.product_id ? products.find((p) => p.id === line.product_id) : undefined;
-        if (product?.track_stock)
+        if (product?.track_stock) {
+          const guess = openingQty(line, product, uoms);
           rows.push({
             lotId: newId(),
             line,
             product,
             location: defaultLocation(product.category),
             expiry: '',
-            qty: String(openingQty(line, product, uoms)),
+            qty: String(guess),
+            guess,
           });
+        }
         else if (line.kind === 'item') rest.push(line.name);
       }
       if (rows.length === 0) return resolve();
@@ -115,32 +121,42 @@ function PutAwaySheet({
   onSaved: () => Promise<void>;
 }) {
   const c = usePalette();
+  const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const set = (i: number, patch: Partial<Draft>) => onChange(drafts.map((d, j) => (i === j ? { ...d, ...patch } : d)));
 
-  // `everything` is the Skip path: the same lots, in the pantry, with no expiry, so nothing is lost.
+  // 'pantry' is the Skip path (and the back gesture): the same lots, in the pantry, with no expiry.
+  // It must always close, so a blank or unparseable qty falls back to the opening guess there rather
+  // than refusing — the spend is already saved, and an undismissable sheet would hide the app.
   async function save(as: 'chosen' | 'pantry') {
-    // put_away only writes an opening move when qty > 0, so a blank one would leave a lot that reads
-    // as empty for ever. Every exit — the button, Skip and the back gesture — comes through here.
-    if (!drafts.every((d) => Number(d.qty) > 0)) return setError('Enter how much of each, even a rough guess.');
-    setBusy(true);
-    setError(null);
-    const { error } = await supabase.rpc('put_away', {
-      p_lots: drafts.map((d) => ({
+    // numeric(12,3) in the DB, so round the way it will be stored: "0.0004" is zero, not a quantity.
+    const rows = drafts.map((d) => {
+      const typed = Math.round(Number(d.qty) * 1000) / 1000;
+      return {
         id: d.lotId,
         household_id: householdId,
         product_id: d.product.id,
         spend_line_id: d.line.id,
         location: as === 'pantry' ? 'pantry' : d.location,
         expiry_date: as === 'pantry' ? null : d.expiry || null,
-        qty: Number(d.qty),
-      })),
+        qty: typed > 0 ? typed : Math.max(Math.round(d.guess * 1000) / 1000, 1),
+      };
     });
+    if (as === 'chosen' && !drafts.every((d) => Math.round(Number(d.qty) * 1000) / 1000 > 0))
+      return setError('Enter how much of each, even a rough guess.');
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.rpc('put_away', { p_lots: rows });
     setBusy(false);
     if (error) return setError(error.message);
-    await onSaved();
+    // The lots are in. A failed reload is the next screen's problem, never a reason to stay open.
+    try {
+      await onSaved();
+    } catch {
+      /* ignore */
+    }
     onClose();
   }
 
@@ -153,7 +169,7 @@ function PutAwaySheet({
           accessibilityLabel="Put the order away"
           style={{ maxHeight: '94%', backgroundColor: c.ground, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 8 }}>
           <View style={{ alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.line }} />
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
             <T size={22} weight="700">
               Put it away
             </T>
@@ -164,8 +180,18 @@ function PutAwaySheet({
             {drafts.map((d, i) => (
               <View key={d.lotId} style={{ backgroundColor: c.surface, borderRadius: 24, padding: 16, gap: 10 }}>
                 <T size={16} weight="700">
-                  {d.line.name}
+                  {d.product.name}
                 </T>
+                {d.line.name !== d.product.name && (
+                  <T size={13} soft>
+                    Bought as “{d.line.name}”
+                  </T>
+                )}
+                {d.line.unit && d.line.unit !== d.product.base_unit && (
+                  <T size={13} soft>
+                    {d.line.qty} {d.line.unit} on the bill — check the amount below.
+                  </T>
+                )}
                 {/* What will actually hit the ledger. /spend sends no quantity, so it is editable here. */}
                 <Field
                   label={`How much? · ${d.product.base_unit}`}
@@ -195,6 +221,16 @@ function PutAwaySheet({
             )}
 
             <ErrorText error={error} />
+          </ScrollView>
+          <View
+            style={{
+              padding: 16,
+              gap: 8,
+              paddingBottom: insets.bottom + 16,
+              backgroundColor: c.ground,
+              borderTopWidth: 1,
+              borderTopColor: c.hair,
+            }}>
             <MagnetButton
               label={busy ? 'Putting away…' : `Put away ${n} ${n === 1 ? 'item' : 'items'}`}
               color="brass"
@@ -212,7 +248,7 @@ function PutAwaySheet({
                 Skip for now
               </T>
             </Pressable>
-          </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>

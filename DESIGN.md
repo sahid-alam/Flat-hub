@@ -29,7 +29,7 @@ Everything lives in `src/ui/kit.tsx`. Screens import from `@/ui/kit` and never h
 | mark | #C9A45C | #121214 | logo |
 | solid / onSolid | #EDEAE3 / #121214 | #121214 / #F7F5F0 | default pill, toast |
 | warnBg / warnFg | #2A2619 / #E6C890 | #F3EBDD / #6B4E12 | warm neutral bar ("Off by ₹14") |
-| scrim | rgba(8,8,10,.66) | rgba(18,18,20,.40) | behind sheets |
+| scrim | rgba(8,8,10,.66) | rgba(18,18,20,.55) | behind sheets |
 
 Blocks (`tokens.block`): stone #E4E0D6, brass #C9A45C, sage #8FD0A6, onyx #121214, onyxMuted #2E2C28.
 

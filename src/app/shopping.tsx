@@ -10,6 +10,7 @@ import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
 import { today } from '@/lib/util';
 import { Block, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
+import { WarnChip } from '@/ui/stock';
 
 const qty = (n: number, unit: string) =>
   unit === 'pc' ? `${n} pc` : n >= 1000 ? `${+(n / 1000).toFixed(2)} ${unit === 'ml' ? 'L' : 'kg'}` : `${n} ${unit}`;
@@ -111,7 +112,7 @@ export default function Shopping() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <SectionLabel>Asked for</SectionLabel>
             <T size={13} soft>
-              Tap to tick off
+              Tick when bought
             </T>
           </View>
           {manual.map((s, i) => (
@@ -128,11 +129,6 @@ export default function Shopping() {
           ))}
         </Block>
       )}
-
-      <T size={13} soft>
-        Low-stock rows can't be removed by hand: they clear themselves once a spend puts the product back above
-        its minimum. Ticking one just means you've bought it.
-      </T>
 
       <Block>
         <SectionLabel>Add to the list</SectionLabel>
@@ -156,6 +152,10 @@ export default function Shopping() {
           }}
         />
       </Block>
+
+      <T size={13} soft>
+        Low-stock rows clear themselves once a spend puts the product back above its minimum.
+      </T>
     </Screen>
   );
 }
@@ -206,13 +206,7 @@ function Tick({
           {label}
         </T>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
-          {mark && (
-            <View style={{ paddingHorizontal: 10, paddingVertical: 1, borderRadius: 11, backgroundColor: c.warnBg }}>
-              <T size={12} weight="700" color={c.warnFg} style={{ lineHeight: 16 }}>
-                {mark}
-              </T>
-            </View>
-          )}
+          {mark && <WarnChip label={mark} />}
           <T size={13} soft>
             {detail}
           </T>

@@ -1,12 +1,12 @@
 // Kitty home, V2 "Card Stack": logo, the kitty, your top-up (brass, the one accent), quick add, who has topped up,
 // recent entries, doorways, and this month's card. A floating "+ Add" pill opens the full spend form.
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { poolCash, position, suggestedTopup, unreimbursed } from '@/domain/kitty';
-import { shoppingList } from '@/domain/stock';
+import { expiringSoon, isEmpty, shoppingList } from '@/domain/stock';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
@@ -15,6 +15,7 @@ import { monthLabel, monthOf, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
 import { QuickAdd } from '@/ui/quickadd';
 import { monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
+import { SOON } from '@/ui/stock';
 import {
   Avatars,
   Block,
@@ -43,7 +44,19 @@ export default function KittyHome() {
   const h = useHousehold();
   const [picking, setPicking] = useState(false); // the + Add pill steps aside while a quick-add confirm is open
   const { books, me, members, holder, isTreasurer, entries, spends, household, reload } = h;
-  const short = shoppingList(h.products, h.lots, h.moves, h.shopping);
+  // ponytail: both scans are O(lots × moves); memoised per load, which is enough at a flat's volume.
+  // Sum the ledger into a Map<lot_id, qty> once if a few years of history ever makes this visible.
+  const { short, expiring } = useMemo(
+    () => ({
+      short: shoppingList(h.products, h.lots, h.moves, h.shopping),
+      expiring: expiringSoon(
+        h.lots.filter((l) => l.location !== 'pantry' && !isEmpty(l.id, h.moves)),
+        new Date().toISOString(),
+        SOON,
+      ),
+    }),
+    [h.products, h.lots, h.moves, h.shopping],
+  );
   useFocusEffect(
     useCallback(() => {
       reload();
@@ -184,7 +197,12 @@ export default function KittyHome() {
             onPress={() => router.push('/topup')}
           />
           <Rule />
-          <Row label="Fridge" icon={{ ios: 'refrigerator', android: 'kitchen' }} onPress={() => router.push('/fridge')} />
+          <Row
+            label="Fridge"
+            icon={{ ios: 'refrigerator', android: 'kitchen' }}
+            detail={expiring.length ? `${expiring.length} to use` : 'none'}
+            onPress={() => router.push('/fridge')}
+          />
           <Rule />
           <Row
             label="Shopping"

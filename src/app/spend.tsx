@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { matchProduct } from '@/domain/extraction';
+import { exactProduct } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
 import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
@@ -44,11 +44,13 @@ export default function AddSpend() {
   async function save() {
     setBusy(true);
     setError(null);
-    // One match per line, used for both the spend_line and the lot that may follow it.
+    // One match per line, used for both the spend_line and the lot that may follow it. /spend has no
+    // confirm card, and spend_line.product_id can never be corrected, so only an exact name or alias
+    // counts — a fuzzy guess would file "Milk powder" under Milk for good. /import does the fuzzy pass.
     const named = parsed.map((l) => ({
       ...l,
       name: l.name.trim(),
-      product_id: l.kind === 'item' ? matchProduct(l.name, products)?.id ?? null : null,
+      product_id: l.kind === 'item' ? exactProduct(l.name, products)?.id ?? null : null,
     }));
     const { error } = await supabase.rpc('add_spend', {
       p_spend: {

@@ -71,7 +71,7 @@ const lightV2: typeof darkV2 = {
   onSolid: '#F7F5F0',
   warnBg: '#F3EBDD',
   warnFg: '#6B4E12',
-  scrim: 'rgba(18,18,20,0.40)',
+  scrim: 'rgba(18,18,20,0.55)',
 };
 
 // ponytail: the fridge-door names stay as aliases so untouched screens keep compiling; drop them once no screen reads them.

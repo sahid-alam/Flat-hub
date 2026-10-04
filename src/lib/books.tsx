@@ -115,8 +115,10 @@ async function load(userId: string): Promise<Data | null> {
       .order('created_at'),
   ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
-  for (const r of [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping])
-    if (r.error) throw r.error;
+  // The kitty's tables are fatal — without them there is no flat. The stock tables are not: a web
+  // build that reaches live before the migration does must degrade to "no stock", never to the
+  // create-a-flat screen (_layout routes `!!session && !data` to welcome).
+  for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
     me,
@@ -126,10 +128,10 @@ async function load(userId: string): Promise<Data | null> {
     lines: lines.data!,
     entries: entries.data!,
     products: products.data!,
-    lots: lots.data!,
-    moves: moves.data!,
-    uoms: uoms.data!,
-    shopping: shopping.data!,
+    lots: lots.data ?? [],
+    moves: moves.data ?? [],
+    uoms: uoms.data ?? [],
+    shopping: shopping.data ?? [],
   };
 }
 

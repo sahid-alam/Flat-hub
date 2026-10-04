@@ -11,7 +11,7 @@ const PLACES = ['fridge', 'freezer', 'pantry'] as const;
 
 export default function Stock() {
   const c = usePalette();
-  const { lots, moves, products, loading } = useStock();
+  const { lots, moves, products } = useStock();
 
   const byId = new Map(products.map((p) => [p.id, p]));
   const held = lots.filter((l) => !isEmpty(l.id, moves));
@@ -75,7 +75,7 @@ export default function Stock() {
         </Block>
       )}
 
-      {loading ? null : held.length === 0 ? (
+      {held.length === 0 ? (
         <Block>
           <T size={17} weight="700">
             Nothing on hand yet

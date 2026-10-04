@@ -1,24 +1,27 @@
 // What's in the fridge and freezer, first-expired first-out. Every action appends a stock_move;
 // nothing here ever updates or deletes a row. See docs/DATA_MODEL.md ("Stock & fridge").
 import { Stack, router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { daysLeft, expiringSoon, fefo, isEmpty, onHand, staleWarning } from '@/domain/stock';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
-import { insertOnce } from '@/lib/supabase';
-import { Block, Chip, ErrorText, Pill, Rule, Screen, T } from '@/ui/kit';
-import { ActionButton, GroupHead, WarnChip, WarnNote, daysLabel, fmtQty, useStock, type LotRow, type MoveRow, type StockProductRow } from '@/ui/stock';
+import { insertOnce, supabase } from '@/lib/supabase';
+import { WarnNote } from '@/ui/capture';
+import { Block, Chip, ErrorText, Pill, Rule, Screen, T, usePalette } from '@/ui/kit';
+import { ActionButton, GroupHead, SOON, WarnChip, daysLabel, fmtQty, useStock, type LotRow, type MoveRow, type StockProductRow } from '@/ui/stock';
 
-const SOON = 2; // days: the chip turns warm
 const URGENT = 0; // expired or due today: pulled to the top of the list
 
 export default function Fridge() {
   const { me, household } = useHousehold();
-  const { lots, moves, products, loading, error, reload } = useStock();
+  const { lots, moves, products, reload } = useStock();
   const [busy, setBusy] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // One id per pending action, kept until a reload confirms it: a retry after a lost response then
+  // hits insertOnce's 23505 path instead of minting a second move against a stale on-hand.
+  const pending = useRef(new Map<string, string>());
 
   const now = new Date().toISOString();
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -34,11 +37,14 @@ export default function Fridge() {
     const have = onHand(lot.id, moves);
     if (have <= 0) return;
     const qty = Math.max(Math.round(have * fraction * 1000) / 1000, 0.001);
+    const key = `${lot.id}:${reason}:${fraction}`;
+    const moveId = pending.current.get(key) ?? newId();
+    pending.current.set(key, moveId);
     setBusy(lot.id);
     setSaveError(null);
     try {
       await insertOnce('stock_move', {
-        id: newId(),
+        id: moveId,
         household_id: household.id,
         lot_id: lot.id,
         delta_qty: -Math.min(qty, have),
@@ -46,9 +52,20 @@ export default function Fridge() {
         member_id: me.id,
       });
       await reload();
+      pending.current.delete(key); // only once the move is visible: before that, the id must stand
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     }
+    setBusy(null);
+  }
+
+  /** `lot` is not a ledger: opened is a plain flag, and the migration grants exactly this column. */
+  async function markOpened(lot: LotRow) {
+    setBusy(lot.id);
+    setSaveError(null);
+    const { error } = await supabase.from('lot').update({ opened: true }).eq('id', lot.id);
+    if (error) setSaveError(error.message);
+    else await reload();
     setBusy(null);
   }
 
@@ -69,8 +86,8 @@ export default function Fridge() {
           ),
         }}
       />
-      <ErrorText error={error ?? saveError} />
-      {loading ? null : sorted.length === 0 ? (
+      <ErrorText error={saveError} />
+      {sorted.length === 0 ? (
         <Block>
           <T size={17} weight="700">
             Nothing in the fridge yet
@@ -96,6 +113,7 @@ export default function Fridge() {
                     stale={stale.has(lot.id)}
                     busy={busy === lot.id}
                     onAction={record}
+                    onOpen={markOpened}
                   />
                 </View>
               ))}
@@ -115,6 +133,7 @@ function LotCard({
   stale,
   busy,
   onAction,
+  onOpen,
 }: {
   lot: LotRow;
   product: StockProductRow | undefined;
@@ -123,7 +142,9 @@ function LotCard({
   stale: boolean;
   busy: boolean;
   onAction: (lot: LotRow, reason: 'consume' | 'discard', fraction: 1 | 0.5) => void;
+  onOpen: (lot: LotRow) => void;
 }) {
+  const c = usePalette();
   const unit = product?.base_unit ?? 'pc';
   const name = product?.name ?? 'Unknown product';
   const left = fmtQty(onHand(lot.id, moves), unit);
@@ -149,14 +170,34 @@ function LotCard({
             <Chip kind="pool" label={daysLabel(days, lot.expiry_date)} />
           )
         ) : null}
-        {lot.opened && <Chip kind="pending" label="Opened" />}
+        {lot.opened ? (
+          <Chip kind="pending" label="Opened" />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${what} · mark opened`}
+            disabled={busy}
+            onPress={() => onOpen(lot)}
+            // 48pt target on a 24pt chip: the negative margin keeps the row's height unchanged.
+            style={({ pressed }) => [{ minHeight: 48, justifyContent: 'center', marginVertical: -12 }, pressed && { opacity: 0.6 }]}>
+            <View style={{ borderRadius: 9999, borderWidth: 1.5, borderColor: c.line, paddingHorizontal: 10, paddingVertical: 2 }}>
+              <T size={12} weight="700" soft style={{ lineHeight: 16 }}>
+                Mark opened
+              </T>
+            </View>
+          </Pressable>
+        )}
         {size && (
           <T size={13} soft>
             {size} pack
           </T>
         )}
       </View>
-      {stale && <WarnNote>{`This unopened pack expires before the opened ${name.toLowerCase()} — finish this one first.`}</WarnNote>}
+      {stale && (
+        <WarnNote>
+          <T size={13} weight="600" color={c.warnFg}>{`This unopened pack expires before the opened ${name.toLowerCase()} — finish this one first.`}</T>
+        </WarnNote>
+      )}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <ActionButton
           label="Finished"
