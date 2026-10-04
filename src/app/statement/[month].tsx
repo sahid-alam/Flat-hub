@@ -84,7 +84,11 @@ function Detail({ month }: { month: string }) {
             </View>
             <View aria-hidden style={{ flexDirection: 'row', gap: 3, height: 12 }}>
               {split.map((s) => (
-                <View key={s.tone} style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: c[s.tone] }} />
+                // `raised` is a card step, too close to this block to read as a 12px bar: the line token stands in for it.
+                <View
+                  key={s.tone}
+                  style={{ flex: Math.max(0, s.paise), borderRadius: 6, backgroundColor: s.tone === 'raised' ? c.line : c[s.tone] }}
+                />
               ))}
             </View>
           </>
