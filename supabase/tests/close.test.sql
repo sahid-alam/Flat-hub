@@ -107,11 +107,14 @@ select lives_ok(
      values ('77777777-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', '2026-07-20', '2026-07-24') $$,
   'a reopened month accepts an absence again');
 
+-- close July again, so the outsider below has something it must NOT see
+select public.close_month('88888888-0000-7000-8000-000000000004', '11111111-0000-7000-8000-000000000001', '2026-07');
+
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000c","role":"authenticated"}';
 select public.create_household('11111111-0000-7000-8000-000000000002', '22222222-0000-7000-8000-000000000003', 'Other flat', 'Outsider');
 select public.close_month('88888888-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000002', '2026-07');
-select is((select count(*) from public.month_close where household_id = '11111111-0000-7000-8000-000000000001'),
-  0::bigint, 'a non-member sees no month_close rows from another flat');
+select is((select count(*) from public.month_close), 1::bigint,
+  'a non-member sees only their own flat''s month_close row');
 select lives_ok(
   $$ insert into public.member_absence (id, household_id, member_id, from_date, to_date)
      values ('77777777-0000-7000-8000-000000000004', '11111111-0000-7000-8000-000000000002', '22222222-0000-7000-8000-000000000003', '2026-08-01', '2026-08-04') $$,

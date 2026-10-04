@@ -137,6 +137,9 @@ begin
   if not private.i_hold_kitty(p_household_id) then
     raise exception 'only the treasurer can close a month' using errcode = '42501';
   end if;
+  if p_month !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then
+    raise exception '% is not a month', p_month using errcode = 'P0001';
+  end if;
   if p_month >= to_char(now() at time zone 'Asia/Kolkata', 'YYYY-MM') then
     raise exception '% is not over yet', to_char(to_date(p_month, 'YYYY-MM'), 'FMMonth YYYY')
       using errcode = 'P0001';
