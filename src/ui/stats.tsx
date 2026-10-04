@@ -17,6 +17,8 @@ export function MonthBars({ series, selected }: { series: { month: string; paise
   const c = usePalette();
   const peak = Math.max(...series.map((m) => m.paise), 1);
   const peakMonth = series.find((m) => m.paise === peak);
+  // a selected month with nothing in it is a hollow dot, so the note must explain the dot, not the fill
+  const anyEmpty = series.some((m) => selected.has(m.month) && m.paise === 0);
 
   return (
     <View style={{ gap: 8 }}>
@@ -51,7 +53,7 @@ export function MonthBars({ series, selected }: { series: { month: string; paise
         })}
       </View>
       <T size={13} soft>
-        {peak > 1 && peakMonth
+        {!anyEmpty && peak > 1 && peakMonth
           ? `The filled bar is what you are looking at. The dashed line is the biggest month, ${formatINR(peak)} in ${monthLabel(peakMonth.month)}.`
           : 'A hollow dot means nothing was spent that month.'}
       </T>
@@ -141,7 +143,7 @@ export function SplitBar({ rows }: { rows: { label: string; note?: string; paise
 }
 
 /** Who paid, in fixed alphabetical order and never ranked: own pocket beside pool used. */
-export function WhoPaid({ rows }: { rows: { name: string; ownPocketPaise: number; poolPaise: number }[] }) {
+export function WhoPaid({ rows }: { rows: { member_id: string; name: string; ownPocketPaise: number; poolPaise: number }[] }) {
   const c = usePalette();
   const cell = (paise: number) =>
     paise ? (
@@ -168,7 +170,7 @@ export function WhoPaid({ rows }: { rows: { name: string; ownPocketPaise: number
       <Rule />
       {rows.map((r) => (
         <View
-          key={r.name}
+          key={r.member_id}
           accessible
           accessibilityLabel={`${r.name} laid out ${r.ownPocketPaise ? formatINR(r.ownPocketPaise) : 'nothing'} and spent ${
             r.poolPaise ? formatINR(r.poolPaise) : 'nothing'

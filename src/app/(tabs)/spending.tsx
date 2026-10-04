@@ -5,7 +5,7 @@ import { Stack, router } from 'expo-router';
 import { Fragment, useState } from 'react';
 import { View } from 'react-native';
 
-import { istDate } from '@/domain/kitty';
+import { closableMonths, istDate } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import {
   biggestSpends,
@@ -21,6 +21,7 @@ import { useHousehold } from '@/lib/books';
 import { dayLabel, monthLabel, monthOf, shiftMonth, thisMonth } from '@/lib/util';
 import { SOURCE } from '@/ui/activity';
 import { Block, Chip, Hero, MonthCard, Rule, Screen, SectionLabel, T, Choice } from '@/ui/kit';
+import { CloseMonth } from '@/app/statement';
 import { monthName, monthRows, statusFor } from '@/ui/statement';
 import { CategoryBars, MonthBars, SplitBar, WhoPaid } from '@/ui/stats';
 
@@ -34,7 +35,7 @@ const PERIODS: { value: Period; label: string }[] = [
 const TAB_BAR = 56 + 34;
 
 export default function Spending() {
-  const { spends, entries, members, books, closes, name } = useHousehold();
+  const { spends, entries, members, books, closes, name, household, isTreasurer, reload } = useHousehold();
   const [period, setPeriod] = useState<Period>('this');
   const nowIso = new Date().toISOString();
 
@@ -48,6 +49,8 @@ export default function Spending() {
   const n = livePeriodSpends(spends, months).length;
   const avg = Math.round(series.reduce((a, m) => a + m.paise, 0) / Math.max(1, series.length));
   const label = periodLabel(months);
+  // closes === null: the month_close table isn't there yet, so nothing can be closed
+  const closable = isTreasurer && closes ? closableMonths(books, closes, nowIso)[0] : undefined;
 
   return (
     <Screen padBottom={TAB_BAR}>
@@ -59,7 +62,8 @@ export default function Spending() {
         <SectionLabel>Spent {label}</SectionLabel>
         <Hero paise={total} />
         <T size={15} soft>
-          {formatINR(avg)} a month on average · {monthLabel(chartMonths[0])} to {monthLabel(chartMonths[chartMonths.length - 1])}
+          {formatINR(avg)} a month on average
+          {chartMonths.length > 1 && ` · ${monthLabel(chartMonths[0])} to ${monthLabel(chartMonths[chartMonths.length - 1])}`}
         </T>
         <T size={15}>
           {total === 0
@@ -106,7 +110,7 @@ export default function Spending() {
             <SectionLabel>Who paid</SectionLabel>
             <WhoPaid
               rows={paid
-                .map((p) => ({ ...p, name: name(p.member_id) }))
+                .map((p) => ({ ...p, name: name(p.member_id).split(' ')[0] }))
                 .filter((p) => p.ownPocketPaise || p.poolPaise || mates.some((m) => m.id === p.member_id))}
             />
           </Block>
@@ -137,6 +141,8 @@ export default function Spending() {
           </Block>
         </>
       )}
+
+      {closable && <CloseMonth month={closable} householdId={household.id} onClosed={reload} />}
 
       <SectionLabel>Statements</SectionLabel>
       <T size={13} soft>
