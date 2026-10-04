@@ -8,11 +8,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { poolCash, position, suggestedTopup, unreimbursed } from '@/domain/kitty';
 import { expiringSoon, isEmpty, shoppingList } from '@/domain/stock';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
-import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { monthLabel, monthOf, sayError, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
+import { isOpen, useDuties } from '@/ui/duties';
 import { QuickAdd } from '@/ui/quickadd';
 import { monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
 import { SOON } from '@/ui/stock';
@@ -41,7 +41,7 @@ export default function KittyHome() {
   const c = usePalette();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const h = useHousehold();
+  const h = useDuties();
   const [picking, setPicking] = useState(false); // the + Add pill steps aside while a quick-add confirm is open
   const { books, me, members, holder, isTreasurer, entries, spends, household, closes, reload } = h;
   // ponytail: both scans are O(lots × moves); memoised per load, which is enough at a flat's volume.
@@ -62,6 +62,15 @@ export default function KittyHome() {
       reload();
     }, [reload]),
   );
+
+  // Today's duty: the viewer's own open turn if they have one, otherwise the first one due.
+  const openToday = h.todays.filter((r) => isOpen(r.outcome));
+  const myTurn = openToday.find((r) => r.memberId === me.id);
+  const nextTurn = myTurn ?? openToday[0];
+  const dutyDetail = nextTurn
+    ? `${nextTurn.duty.name} · ${myTurn ? 'yours' : nextTurn.memberId ? h.name(nextTurn.memberId).split(' ')[0] : 'nobody free'}` +
+      (openToday.length > 1 ? ` · ${openToday.length} due` : '')
+    : 'none';
 
   const month = thisMonth();
   const inMonth = (iso: string) => monthOf(iso) === month;
@@ -209,6 +218,13 @@ export default function KittyHome() {
             icon={{ ios: 'cart', android: 'shopping_cart' }}
             detail={short.length ? String(short.length) : 'none'}
             onPress={() => router.push('/shopping')}
+          />
+          <Rule />
+          <Row
+            label="Today's duty"
+            icon={{ ios: 'checkmark.circle', android: 'task_alt' }}
+            detail={dutyDetail}
+            onPress={() => router.push('/duties')}
           />
           <Rule />
           <Row label="Away" icon={{ ios: 'airplane', android: 'flight' }} onPress={() => router.push('/away')} />
