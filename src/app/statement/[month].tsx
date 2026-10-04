@@ -46,8 +46,9 @@ const SOURCE: Record<'zepto' | 'local' | 'other', { label: string; tone: BlockTo
   local: { label: 'Local', tone: 'raised' },
   other: { label: 'Other', tone: 'surface' },
 };
-/** `raised` and `surface` are card steps, too close to the block to read as a 12px bar. */
-const barOf = (c: Palette, tone: BlockTone) => (tone === 'raised' ? c.line : tone === 'surface' ? c.muted : c[tone]);
+/** Block fills don't work as bars: the card steps are too close to the block, and `stone` is byte-identical
+ * to light's `hair`, so a stone bar vanishes. These three fill tokens carry in both modes. */
+const barOf = (c: Palette, tone: BlockTone) => (tone === 'stone' ? c.accent : tone === 'raised' ? c.line : c.muted);
 
 function Detail({ month }: { month: string }) {
   const c = usePalette();
@@ -127,7 +128,7 @@ function Detail({ month }: { month: string }) {
                 </T>
               </View>
               <View aria-hidden style={{ height: 6, borderRadius: 3, backgroundColor: c.hair }}>
-                <View style={{ width: `${g.pct}%`, height: 6, borderRadius: 3, backgroundColor: c.stone }} />
+                <View style={{ width: `${g.pct}%`, height: 6, borderRadius: 3, backgroundColor: c.line }} />
               </View>
             </View>
           ))}

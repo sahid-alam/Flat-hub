@@ -15,6 +15,8 @@ export default function Away() {
   const [to, setTo] = useState(today());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // the Remove buttons sit a screenful below the form, so their refusal needs its own slot down there
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const month = thisMonth();
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
   const w = presenceWeights(month, books.members, books.absences);
@@ -76,6 +78,7 @@ export default function Away() {
 
       <Block>
         <SectionLabel>Absences</SectionLabel>
+        <ErrorText error={removeError} />
         {absences.length === 0 ? (
           <T soft>No one's logged an absence.</T>
         ) : (
@@ -97,10 +100,10 @@ export default function Away() {
                       accessibilityLabel={`Remove absence ${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`}
                       onPress={async () => {
                         if (!(await confirm('Remove this absence?', `${dayLabel(a.from_date)} – ${dayLabel(a.to_date)}`, 'Remove'))) return;
-                        setError(null);
+                        setRemoveError(null);
                         // a closed month refuses the delete: say so, or the row would just sit there
                         const { error } = await supabase.from('member_absence').delete().eq('id', a.id);
-                        if (error) return setError(sayError(error, holder?.display_name));
+                        if (error) return setRemoveError(sayError(error, holder?.display_name));
                         reload();
                       }}
                       style={({ pressed }) => [
