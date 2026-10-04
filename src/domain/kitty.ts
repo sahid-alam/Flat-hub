@@ -177,7 +177,7 @@ export function closableMonths(b: Books, closes: Close[], nowIso: string): strin
 }
 
 /** Integer percentages of `total` that sum to exactly 100, by the same largest-remainder rule as allocate(). */
-function pcts<T extends { paise: number }>(groups: T[]): (T & { pct: number })[] {
+export function pcts<T extends { paise: number }>(groups: T[]): (T & { pct: number })[] {
   // allocate() needs non-negative weights: a net-negative group (mostly discounts) reads 0% and the
   // positive groups share the 100 between them. A fully-reversed month reads 0% everywhere.
   const weights = Object.fromEntries(groups.map((g, i) => [String(i), Math.max(0, g.paise)]));
