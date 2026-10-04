@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { TextInput, View, type TextInputProps } from 'react-native';
 
 import { formatINR } from '@/domain/money';
-import { Block, DISPLAY, Icon, MagnetButton, SectionLabel, T, tokens, usePalette, useInk } from '@/ui/kit';
+import { Block, DISPLAY, Icon, MagnetButton, SectionLabel, T, focusRing, tokens, usePalette, useInk } from '@/ui/kit';
 
 /** The amount as a giant Bricolage entry on a stone block: small top-aligned ₹, onyx underline so it reads as a field. */
 export function HeroInput({ label, ...props }: TextInputProps & { label: string }) {
@@ -33,6 +33,7 @@ export function HeroInput({ label, ...props }: TextInputProps & { label: string 
             letterSpacing: -1.5,
             color: ink.ink,
             fontVariant: ['lining-nums', 'tabular-nums'],
+            ...focusRing(ink.ink),
           }}
         />
       </View>

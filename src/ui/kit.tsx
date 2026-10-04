@@ -94,6 +94,10 @@ export type Palette = typeof tokens.dark;
 export const usePalette = (): Palette => (useColorScheme() === 'light' ? tokens.light : tokens.dark);
 
 /** Bricolage Grotesque 800: every amount. */
+/** On web a focused TextInput draws Chrome's blue ring over our own border. Keep the ring (keyboard users
+ *  need it) but in the theme's focus colour, offset clear of the field. */
+export const focusRing = (color: string) => ({ outlineColor: color, outlineWidth: 2, outlineOffset: 2 }) as const;
+
 export const DISPLAY = 'BricolageGrotesque_800ExtraBold';
 export const DISPLAY_SEMI = 'BricolageGrotesque_700Bold';
 /** Righteous: the FLAT/HUB mark and giant month names only (no ₹, no tabular digits). */
@@ -609,7 +613,7 @@ export function Field({ label, big, ...props }: TextInputProps & { label: string
         {...props}
         style={[
           s.input,
-          { backgroundColor: c.surface, borderColor: c.line, color: c.ink },
+          { backgroundColor: c.surface, borderColor: c.line, color: c.ink, ...focusRing(c.focus) },
           big && { fontFamily: DISPLAY, fontSize: 34, height: 72, paddingTop: Platform.OS === 'ios' ? 6 : 0 },
           props.style,
         ]}
