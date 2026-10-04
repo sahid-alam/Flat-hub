@@ -50,10 +50,12 @@ test('a skip earns no credit, so the skipper gets the next turn', () => {
 
   const skipped = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'skipped', due_on: '2026-10-01' })];
   assert.equal(donePoints(skipped, 'a', [d]), 0);
+  assert.equal(assignee(d, '2026-10-01', abc, [], skipped, ANCHOR, [d]), 'a'); // the skip was a's instance
   assert.equal(assignee(d, '2026-10-02', abc, [], skipped, ANCHOR, [d]), 'a');
 
   const done = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' })];
   assert.equal(donePoints(done, 'a', [d]), 1);
+  assert.equal(assignee(d, '2026-10-01', abc, [], done, ANCHOR, [d]), 'a'); // a settled it; not reassigned
   assert.equal(assignee(d, '2026-10-02', abc, [], done, ANCHOR, [d]), 'b'); // credit moves you down the list
 });
 

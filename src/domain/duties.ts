@@ -101,12 +101,10 @@ export function assignee(
   duties: Duty[] = [duty],
 ): string | null {
   const settled = live(events);
-  // A swap hands this one instance over, whatever the schedule says. Last swap wins (UUIDv7 order).
-  const swapped = settled
-    .filter((e) => e.outcome === 'swapped' && e.duty_id === duty.id && e.due_on === dueOn)
-    .sort(byId)
-    .pop();
-  if (swapped) return swapped.to_member_id;
+  // Anything already recorded for this instance settles it: a swap hands it over (whatever the
+  // schedule says), a done or a skip names who owned it. Last event wins — UUIDv7 ids sort by time.
+  const last = settled.filter((e) => e.duty_id === duty.id && e.due_on === dueOn).sort(byId).pop();
+  if (last) return last.outcome === 'swapped' ? last.to_member_id : last.member_id;
   if (duty.schedule === 'fixed') return duty.fixed_member_id;
 
   const can = members.filter((m) => onRoll(m, dueOn) && !away(absences, m.id, dueOn)).sort(byId);
@@ -145,12 +143,10 @@ export function rota(
     for (const duty of active) {
       if (!isDueOn(duty, date, anchor)) continue;
       const last = settled.filter((e) => e.duty_id === duty.id && e.due_on === date).sort(byId).pop();
-      // Once it is done or skipped, the row names who owned it; only an open instance is assigned.
-      const settledBy = last && last.outcome !== 'swapped' ? last.member_id : null;
       out.push({
         date,
         duty,
-        memberId: settledBy ?? assignee(duty, date, members, absences, events, anchor, duties),
+        memberId: assignee(duty, date, members, absences, events, anchor, duties),
         outcome: last ? last.outcome : null,
       });
     }
