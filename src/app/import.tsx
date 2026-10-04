@@ -1,4 +1,5 @@
-// Import a Zepto order (invoice PDF, screenshot or typed text) → the LLM reads it → a confirm card → save.
+// Import a Zepto order (screenshot, bill photo or typed text) → the LLM reads it → a confirm card → save.
+// PDFs are not supported: the reader takes images only (supabase/functions/extract-spend/README.md).
 // Nothing is saved until a mate has looked at the card and the lines add up.
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -88,7 +89,7 @@ export default function ImportOrder() {
     try {
       const input = await get();
       if (!input) return; // picker cancelled
-      setReading(input.type === 'pdf' ? 'the invoice' : input.type === 'image' ? 'the screenshot' : 'your list');
+      setReading(input.type === 'image' ? 'the picture' : 'your list');
       const raw = await extractSpend(input);
       if (mine !== run.current) return; // cancelled while reading
       const { extraction: x, problems } = normalizeExtraction(raw);
@@ -120,13 +121,14 @@ export default function ImportOrder() {
 
   const pickFile = () =>
     read(async () => {
-      const res = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+      const res = await DocumentPicker.getDocumentAsync({ type: ['image/*'], copyToCacheDirectory: true });
       const a = res.assets?.[0];
       if (res.canceled || !a) return null;
-      const isPdf = a.mimeType === 'application/pdf' || a.name.toLowerCase().endsWith('.pdf');
-      const media_type = isPdf ? null : imageType(a.mimeType);
+      if (a.mimeType === 'application/pdf' || a.name.toLowerCase().endsWith('.pdf'))
+        throw new Error('PDFs cannot be read yet — screenshot the order instead.');
+      const media_type = imageType(a.mimeType);
       const data = await readBase64(a.base64 ?? a.uri);
-      return media_type ? { type: 'image', media_type, data } : { type: 'pdf', data };
+      return { type: 'image', media_type, data };
     });
 
   const pickScreenshot = () =>
@@ -161,8 +163,8 @@ export default function ImportOrder() {
   if (!draft) {
     return (
       <Screen>
-        <T soft>Pick the Zepto invoice or a screenshot of the order. You'll check every line before anything is saved.</T>
-        <MagnetButton label="Invoice PDF or image" icon={{ ios: 'doc', android: 'description' }} onPress={pickFile} />
+        <T soft>Pick a screenshot of the Zepto order or a photo of the bill. You'll check every line before anything is saved.</T>
+        <MagnetButton label="Picture of the bill" icon={{ ios: 'doc', android: 'description' }} onPress={pickFile} />
         <MagnetButton
           label="Screenshot from photos"
           outline
