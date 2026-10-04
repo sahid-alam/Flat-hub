@@ -50,9 +50,10 @@ function Routes() {
         <Stack.Screen name="statement/[month]" options={{ title: 'Statement' }} />
         <Stack.Screen name="mates" options={{ title: 'Mates' }} />
         <Stack.Screen name="favourites" options={{ title: 'Favourites' }} />
-        <Stack.Screen name="stock" options={{ title: 'Stock' }} />
-        <Stack.Screen name="fridge" options={{ title: 'Fridge' }} />
-        <Stack.Screen name="shopping" options={{ title: 'Shopping' }} />
+        <Stack.Screen name="stock" options={{ headerShown: false }} />
+        <Stack.Screen name="fridge" options={{ headerShown: false }} />
+        <Stack.Screen name="shopping" options={{ headerShown: false }} />
+        {/* /fridge /shopping /stock are Redirects into the Kitchen tab: no header on the way through. */}
         <Stack.Screen name="duties/manage" options={{ title: 'Manage duties', headerLeft: Back }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
       </Stack.Protected>

@@ -46,6 +46,15 @@ export default function Flat() {
           onPress={() => router.push('/favourites')}
         />
         <Rule />
+        {/* The Kitty's Statements block went with the link pile; Spending's archive is the main
+            doorway, but /statement is where a month gets closed, so it keeps one here too. */}
+        <Row
+          label="Statements"
+          icon={{ ios: 'doc.text', android: 'description' }}
+          detail="month by month"
+          onPress={() => router.push('/statement')}
+        />
+        <Rule />
         <Row
           label="Record a top-up"
           icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}

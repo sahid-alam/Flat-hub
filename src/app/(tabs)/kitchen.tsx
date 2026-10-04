@@ -6,15 +6,12 @@ import { View } from 'react-native';
 
 import { useHousehold } from '@/lib/books';
 import { FridgeBody, fridgeSoonCount } from '@/ui/fridge';
-import { Choice, Screen, T, usePalette } from '@/ui/kit';
+import { Choice, Screen, T, TAB_BAR, usePalette } from '@/ui/kit';
 import { ShoppingBody, toBuyCount } from '@/ui/shopping';
 import { StockBody, stockItemCount } from '@/ui/stock';
 
 const SEGMENTS = ['fridge', 'shopping', 'stock'] as const;
 type Seg = (typeof SEGMENTS)[number];
-
-/** The tab bar (56) plus its safe area (34); Screen's SafeAreaView already pays the safe area. */
-const BAR = 56;
 
 export default function Kitchen() {
   const c = usePalette();
@@ -54,7 +51,7 @@ export default function Kitchen() {
           ]}
         />
       </View>
-      <Screen padBottom={BAR}>
+      <Screen padBottom={TAB_BAR}>
         {on === 'fridge' && <FridgeBody />}
         {on === 'shopping' && <ShoppingBody />}
         {on === 'stock' && <StockBody onShopping={() => show('shopping')} />}

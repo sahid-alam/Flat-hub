@@ -20,7 +20,7 @@ import {
 import { useHousehold } from '@/lib/books';
 import { dayLabel, monthLabel, monthOf, shiftMonth, thisMonth } from '@/lib/util';
 import { SOURCE } from '@/ui/activity';
-import { Block, Chip, Hero, MonthCard, Rule, Screen, SectionLabel, T, Choice } from '@/ui/kit';
+import { Block, Chip, Hero, MonthCard, Rule, Screen, SectionLabel, T, TAB_BAR, Choice } from '@/ui/kit';
 import { CloseMonth } from '@/app/statement';
 import { monthName, monthRows, statusFor } from '@/ui/statement';
 import { CategoryBars, MonthBars, SplitBar, WhoPaid } from '@/ui/stats';
@@ -32,7 +32,6 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: 'all', label: 'All' },
 ];
 /** The tab bar: 56pt of chrome over a 34pt safe area. */
-const TAB_BAR = 56 + 34;
 
 export default function Spending() {
   const { spends, entries, members, books, closes, name, household, isTreasurer, reload } = useHousehold();

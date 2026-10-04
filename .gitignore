@@ -56,3 +56,6 @@ supabase/.branches
 /font-reference
 /logo-font-reference
 /.claude/worktrees
+
+# mobbin reference screenshots (local only)
+/.mobbin-refs

@@ -1,7 +1,7 @@
 // Whose turn it is, and where everyone stands. Every action appends one chore_event; nothing here
 // ever updates or deletes a row — Undo writes a reversal. A skip earns no credit — see
 // docs/DATA_MODEL.md ("Duties").
-import { Stack, router } from 'expo-router';
+import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -10,7 +10,7 @@ import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { dayLabel, sayError, today } from '@/lib/util';
 import { cadenceLabel, isOpen, useDuties } from '@/ui/duties';
-import { Block, Choice, ErrorText, Pill, Rule, Screen, SectionLabel, T, Toast, usePalette } from '@/ui/kit';
+import { Block, Choice, ErrorText, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, Toast, usePalette } from '@/ui/kit';
 
 const AHEAD = 5; // today plus the next four days
 const BACK = 2; // the two days behind today, so a late Done is still recordable
@@ -231,34 +231,42 @@ export default function Duties() {
   };
 
   return (
-    <Screen>
-      <Stack.Screen
-        options={{
-          title: 'Duties',
-          headerRight: () => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Manage duties"
-              onPress={() => router.push('/duties/manage')}
-              style={({ pressed }) => [
-                {
-                  minHeight: 48,
-                  justifyContent: 'center',
-                  paddingHorizontal: 16,
-                  borderRadius: 24,
-                  borderWidth: 1.5,
-                  borderColor: brassKey ? c.line : c.accentText,
-                },
-                pressed && { transform: [{ scale: 0.97 }] },
-              ]}>
-              <T size={15} weight="700" color={brassKey ? c.ink : c.accentText}>
-                Manage
-              </T>
-            </Pressable>
-          ),
-        }}
-      />
-
+    // Duties is a tab now, so there is no nav header to hang Manage off: the screen pins its own
+    // title row, exactly as the Kitchen tab does.
+    <View style={{ flex: 1, backgroundColor: c.ground }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          paddingHorizontal: 16,
+          paddingTop: 12,
+        }}>
+        <T size={22} weight="700">
+          Duties
+        </T>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Manage duties"
+          onPress={() => router.push('/duties/manage')}
+          style={({ pressed }) => [
+            {
+              minHeight: 48,
+              justifyContent: 'center',
+              paddingHorizontal: 16,
+              borderRadius: 24,
+              borderWidth: 1.5,
+              borderColor: brassKey ? c.line : c.accentText,
+            },
+            pressed && { transform: [{ scale: 0.97 }] },
+          ]}>
+          <T size={15} weight="700" color={brassKey ? c.ink : c.accentText}>
+            Manage
+          </T>
+        </Pressable>
+      </View>
+      <Screen padBottom={TAB_BAR}>
       <Block tone="raised" accessibilityLabel={digest}>
         <T size={15} weight="700">
           {digest}
@@ -372,7 +380,8 @@ export default function Duties() {
           </T>
         </Block>
       )}
-    </Screen>
+      </Screen>
+    </View>
   );
 }
 
