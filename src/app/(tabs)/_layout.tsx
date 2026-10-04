@@ -60,6 +60,8 @@ export default function TabLayout() {
         options={{
           ...tab('Add', { ios: 'plus', android: 'add' }, 'Add a spend — opens the spend sheet'),
           // The centre is an action, not a destination: a filled mark, never the selected state.
+          // The icon box is 31x28 by default (Apple HIG sizes), so the 34pt mark gets its own.
+          tabBarIconStyle: { width: 34, height: 34 },
           tabBarIcon: () => (
             <View
               style={{
