@@ -49,6 +49,9 @@ function Routes() {
         <Stack.Screen name="statement/[month]" options={{ title: 'Statement' }} />
         <Stack.Screen name="mates" options={{ title: 'Mates' }} />
         <Stack.Screen name="favourites" options={{ title: 'Favourites' }} />
+        <Stack.Screen name="stock" options={{ title: 'Stock' }} />
+        <Stack.Screen name="fridge" options={{ title: 'Fridge' }} />
+        <Stack.Screen name="shopping" options={{ title: 'Shopping' }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
       </Stack.Protected>
     </Stack>
