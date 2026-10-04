@@ -7,7 +7,7 @@ import { useBooks } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { clearInvite, codeOf, savedInvite } from '@/lib/invite';
 import { supabase } from '@/lib/supabase';
-import { Choice, DISPLAY, ErrorText, Field, MagnetButton, Screen, Slip, T } from '@/ui/kit';
+import { Block, Choice, ErrorText, Field, Logo, MagnetButton, Screen, T } from '@/ui/kit';
 
 /** Signed in, not in a flat yet: start one, or join with an invite code. */
 export default function Welcome() {
@@ -60,7 +60,8 @@ export default function Welcome() {
   return (
     <Screen>
       <View style={{ flex: 1, justifyContent: 'center', gap: 24 }}>
-        <T size={34} style={{ fontFamily: DISPLAY, lineHeight: 42 }}>
+        <Logo size={48} />
+        <T size={28} weight="700">
           Your flat
         </T>
         <Choice
@@ -71,7 +72,7 @@ export default function Welcome() {
             { value: 'join', label: 'I have an invite' },
           ]}
         />
-        <Slip magnet={mode === 'create' ? 'green' : 'blue'}>
+        <Block>
           <Field label="Your name, as the flat knows you" value={name} onChangeText={setName} placeholder="Sahid" />
           {mode === 'create' ? (
             <Field label="Flat name" value={flat} onChangeText={setFlat} placeholder="Flat 4B" />
@@ -85,7 +86,7 @@ export default function Welcome() {
           />
           {mode === 'create' && <T size={15} soft>You'll hold the kitty until you hand it to the treasurer.</T>}
           <ErrorText error={error} />
-        </Slip>
+        </Block>
         <MagnetButton label="Not you? Sign out" outline onPress={() => supabase.auth.signOut()} />
       </View>
     </Screen>

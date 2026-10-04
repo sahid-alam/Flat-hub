@@ -8,16 +8,17 @@ import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { dayLabel } from '@/lib/util';
 import { SOURCE } from '@/ui/activity';
-import { ErrorText, MagnetButton, Rule, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { Block, Chip, ErrorText, MagnetButton, Rule, Screen, SectionLabel, T } from '@/ui/kit';
 
-/** Ansh's list: own-pocket spends the kitty still owes back. Only the treasurer can mark them paid. */
+/** Ansh's list: own-pocket spends the kitty still has to pay back. Only the treasurer can mark them paid. */
 export default function ToReimburse() {
-  const c = usePalette();
   const { spends, entries, members, household, books, holder, isTreasurer, reload } = useHousehold();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const owed = unreimbursed(spends, entries);
-  const mates = members.filter((m) => owed.some((s) => s.paid_by === m.id));
+  const mates = members
+    .filter((m) => owed.some((s) => s.paid_by === m.id))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   async function markPaid(spendId: string, memberId: string, paise: number) {
     setBusy(spendId);
@@ -46,38 +47,48 @@ export default function ToReimburse() {
       <ErrorText error={error} />
       {mates.length === 0 && <T soft>Nothing to pay back. Everyone's square.</T>}
       {mates.map((m) => (
-        <Slip key={m.id} magnet="blue">
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <T size={20} weight="700">
-              {m.display_name}
-            </T>
-            <T size={20} weight="700" color={c.blue}>
+        <Block key={m.id}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12 }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <SectionLabel>Get back</SectionLabel>
+              <T size={20} weight="700">
+                {m.display_name}
+              </T>
+            </View>
+            <T num size={28}>
               {formatINR(toReimburse(books, m.id))}
             </T>
           </View>
           {owed
             .filter((s) => s.paid_by === m.id)
-            .map((s, i) => (
-              <View key={s.id} style={{ gap: 8 }}>
-                {i > 0 && <Rule />}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <T>
-                    {[SOURCE[s.source], s.store_name].filter(Boolean).join(' · ')} · {dayLabel(istDate(s.occurred_at))}
+            .map((s) => (
+              <View key={s.id} style={{ gap: 10 }}>
+                <Rule />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <T weight="600">
+                      {[SOURCE[s.source], s.store_name].filter(Boolean).join(' · ')}
+                    </T>
+                    <T size={13} soft>
+                      {dayLabel(istDate(s.occurred_at))}
+                    </T>
+                    <Chip kind="pending" />
+                  </View>
+                  <T num size={20}>
+                    {formatINR(s.total_paise)}
                   </T>
-                  <T weight="600">{formatINR(s.total_paise)}</T>
                 </View>
                 {isTreasurer && (
                   <MagnetButton
                     label={busy === s.id ? 'Saving…' : `Mark ${formatINR(s.total_paise)} paid back`}
-                    color="blue"
-                    outline
+                    color="brass"
                     disabled={busy !== null}
                     onPress={() => markPaid(s.id, m.id, s.total_paise)}
                   />
                 )}
               </View>
             ))}
-        </Slip>
+        </Block>
       ))}
     </Screen>
   );

@@ -5,10 +5,9 @@ import { Platform, Share, View } from 'react-native';
 import { useHousehold } from '@/lib/books';
 import { supabase } from '@/lib/supabase';
 import { confirm } from '@/lib/util';
-import { ErrorText, Field, Heading, MagnetButton, Rule, Screen, Slip, T, usePalette } from '@/ui/kit';
+import { Block, ErrorText, Field, MagnetButton, Pill, Rule, Screen, SectionLabel, T } from '@/ui/kit';
 
 export default function Mates() {
-  const c = usePalette();
   const { me, members, household, holder, isTreasurer, reload } = useHousehold();
   const [displayName, setDisplayName] = useState(me.display_name);
   const [vpa, setVpa] = useState(me.upi_vpa ?? '');
@@ -19,6 +18,7 @@ export default function Mates() {
   const [error, setError] = useState<string | null>(null);
   const link = Linking.createURL('/welcome', { queryParams: { code: household.invite_code } });
   const invite = `Join ${household.name} on FlatHub: ${link}\nInvite code: ${household.invite_code}`;
+  const mates = [...members].sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   async function saveMe() {
     setError(null);
@@ -40,17 +40,15 @@ export default function Mates() {
 
   return (
     <Screen>
-      <Slip magnet="green">
-        <T size={20} weight="700">
-          Invite a mate
-        </T>
+      <Block>
+        <SectionLabel>Invite a mate</SectionLabel>
         <T soft>Send this on the flat's WhatsApp group. They sign in with their email, then tap the link or paste the code.</T>
-        <T size={22} weight="700" style={{ letterSpacing: 2 }} color={c.green}>
+        <T size={28} weight="700" style={{ letterSpacing: 3 }}>
           {household.invite_code}
         </T>
         <MagnetButton
           label={copied ? 'Invite copied' : 'Share invite'}
-          color="green"
+          color="brass"
           icon={{ ios: 'square.and.arrow.up', android: 'share' }}
           onPress={async () => {
             // phones' browsers have the Web Share sheet; desktop browsers fall back to the clipboard
@@ -60,34 +58,45 @@ export default function Mates() {
             setCopied(true);
           }}
         />
-      </Slip>
+      </Block>
 
-      <Heading>The flat</Heading>
-      <Slip>
-        {members.map((m, i) => (
-          <View key={m.id}>
-            {i > 0 && <Rule />}
-            <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12, paddingVertical: 6 }}>
-              <View style={{ flex: 1 }}>
-                <T weight="600">
-                  {m.display_name}
-                  {m.id === me.id ? ' (me)' : ''}
-                </T>
-                <T size={15} soft>
-                  {m.id === holder?.id ? 'Treasurer · ' : ''}
-                  {m.upi_vpa ?? 'no UPI ID yet'}
-                </T>
+      <Block>
+        <SectionLabel>The flat</SectionLabel>
+        {isTreasurer && (
+          <T size={15} soft>
+            You hold the kitty. To hand it over, pick the new treasurer.
+          </T>
+        )}
+        <View>
+          {mates.map((m, i) => (
+            <View key={m.id} style={{ gap: 10, paddingBottom: 8 }}>
+              {i > 0 && <Rule />}
+              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 48, gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <T weight="600">
+                    {m.display_name}
+                    {m.id === me.id ? ' (me)' : ''}
+                  </T>
+                  <T size={13} soft>
+                    {m.upi_vpa ?? 'no UPI ID yet'}
+                  </T>
+                </View>
+                {m.id === holder?.id && <Pill label="Treasurer" />}
               </View>
               {isTreasurer && m.id !== me.id && (
-                <MagnetButton label="Make treasurer" outline onPress={() => handOver(m.id, m.display_name)} />
+                <MagnetButton
+                  label={`Make ${m.display_name} treasurer`}
+                  outline
+                  onPress={() => handOver(m.id, m.display_name)}
+                />
               )}
             </View>
-          </View>
-        ))}
-      </Slip>
+          ))}
+        </View>
+      </Block>
 
-      <Heading>Me</Heading>
-      <Slip>
+      <Block>
+        <SectionLabel>Me</SectionLabel>
         <Field label="Name" value={displayName} onChangeText={(t) => (setDisplayName(t), setSaved(false))} />
         <Field
           label={isTreasurer ? 'Your UPI ID (top-ups are paid here)' : 'Your UPI ID'}
@@ -98,8 +107,9 @@ export default function Mates() {
         />
         <ErrorText error={error} />
         <MagnetButton label={saved ? 'Saved' : 'Save'} onPress={saveMe} disabled={saved || !displayName.trim()} />
-      </Slip>
-      <Slip>
+      </Block>
+      <Block>
+        <SectionLabel>Password</SectionLabel>
         <Field
           label="New password (at least 8 characters)"
           value={password}
@@ -118,8 +128,8 @@ export default function Mates() {
             setPasswordSaved(true);
           }}
         />
-      </Slip>
-      <MagnetButton label="Sign out" outline color="tomato" onPress={() => supabase.auth.signOut()} />
+      </Block>
+      <MagnetButton label="Sign out" outline onPress={() => supabase.auth.signOut()} />
     </Screen>
   );
 }
