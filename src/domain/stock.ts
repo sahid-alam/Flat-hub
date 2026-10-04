@@ -104,3 +104,17 @@ export function shoppingList(
 
   return [...manualRows, ...lowRows];
 }
+
+/**
+ * What this product was last put away as, in base units — the sum of the positive moves on its
+ * newest lot. A manual spend line carries no unit ("milk, 1"), so without this the sheet would
+ * open 1 ml of milk; the previous 1 L pack is the better guess. null when the product is new.
+ */
+export function lastPackSize(productId: string, lots: Lot[], moves: Move[]): number | null {
+  const newest = lots
+    .filter((l) => l.product_id === productId)
+    .sort((a, b) => (a.received_at < b.received_at ? 1 : a.received_at > b.received_at ? -1 : 0))[0];
+  if (!newest) return null;
+  const put = round3(moves.reduce((a, m) => (m.lot_id === newest.id && m.delta_qty > 0 ? a + m.delta_qty : a), 0));
+  return put > 0 ? put : null;
+}

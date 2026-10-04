@@ -7,7 +7,7 @@ import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toBase } from '@/domain/stock';
+import { lastPackSize, toBase, type Lot, type Move } from '@/domain/stock';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
@@ -38,17 +38,28 @@ function defaultLocation(category: string | null): Location {
 }
 
 /** The opening quantity in the product's base unit. */
-function openingQty(line: PutAwayLine, product: ProductRow, uoms: { product_id: string; unit: string; factor_to_base: number }[]): number {
-  if (!line.unit || line.unit === product.base_unit) return line.qty;
-  const mapped = toBase(line.qty, line.unit, product.id, uoms);
-  if (mapped !== null) return mapped;
-  const u = line.unit.toLowerCase();
-  if ((u === 'kg' && product.base_unit === 'g') || (u === 'l' && product.base_unit === 'ml')) return line.qty * 1000;
-  // ponytail: an unmapped unit is only a starting guess — /spend sends qty 1 with no unit at all.
-  // The sheet puts it in an editable field, so the mate fixes a 5 kg bag that opened as 1 g before
-  // it ever reaches the ledger; mapping the unit under the product (product_uom) makes it automatic.
+function openingQty(
+  line: PutAwayLine,
+  product: ProductRow,
+  uoms: { product_id: string; unit: string; factor_to_base: number }[],
+  lots: Lot[],
+  moves: Move[],
+): number {
+  if (line.unit && line.unit !== product.base_unit) {
+    const mapped = toBase(line.qty, line.unit, product.id, uoms);
+    if (mapped !== null) return mapped;
+    const u = line.unit.toLowerCase();
+    if ((u === 'kg' && product.base_unit === 'g') || (u === 'l' && product.base_unit === 'ml')) return line.qty * 1000;
+  } else if (line.unit === product.base_unit) {
+    return line.qty;
+  }
+  // No usable unit: /spend sends qty 1 and no unit at all, so "milk, 1" would open 1 ml. The pack
+  // this product was last put away as is the better guess; the field stays editable either way.
+  const last = lastPackSize(product.id, lots, moves);
+  if (last !== null) return line.qty > 1 ? round3(line.qty * last) : last;
   return line.qty;
 }
+const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 
 /**
  * The Put away sheet, driven by a promise.
@@ -62,7 +73,7 @@ function openingQty(line: PutAwayLine, product: ProductRow, uoms: { product_id: 
  *   {putAway.sheet}
  */
 export function usePutAway() {
-  const { products, household, uoms, reload } = useHousehold();
+  const { products, household, uoms, lots, moves, reload } = useHousehold();
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const done = useRef<(() => void) | null>(null);
@@ -74,7 +85,7 @@ export function usePutAway() {
       for (const line of lines) {
         const product = line.kind === 'item' && line.product_id ? products.find((p) => p.id === line.product_id) : undefined;
         if (product?.track_stock) {
-          const guess = openingQty(line, product, uoms);
+          const guess = openingQty(line, product, uoms, lots, moves);
           rows.push({
             lotId: newId(),
             line,

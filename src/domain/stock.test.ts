@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  lastPackSize,
   onHand,
   isEmpty,
   fefo,
@@ -113,4 +114,20 @@ test('shoppingList: manual first, then low stock, a product in both appears once
   ]);
   // nothing short: dahi isn't tracked, salt has no min, atta is topped up
   assert.deepEqual(shoppingList(products, lots, [mv('l1', 1000), mv('l2', 500)], []), []);
+});
+
+test('lastPackSize remembers how the product was put away last time', () => {
+  const lots: Lot[] = [
+    { id: 'old', product_id: 'milk', location: 'fridge', expiry_date: null, opened: true, received_at: '2026-09-01T06:00:00Z' },
+    { id: 'new', product_id: 'milk', location: 'fridge', expiry_date: null, opened: false, received_at: '2026-10-01T06:00:00Z' },
+    { id: 'atta', product_id: 'atta', location: 'pantry', expiry_date: null, opened: false, received_at: '2026-10-02T06:00:00Z' },
+  ];
+  const moves: Move[] = [
+    { lot_id: 'old', delta_qty: 500 },
+    { lot_id: 'new', delta_qty: 1000 }, // a 1 L pack
+    { lot_id: 'new', delta_qty: -250 }, // drunk since; the pack size is still 1000
+  ];
+  assert.equal(lastPackSize('milk', lots, moves), 1000);
+  assert.equal(lastPackSize('atta', lots, moves), null); // a lot with no opening move
+  assert.equal(lastPackSize('dahi', lots, moves), null); // never bought
 });
