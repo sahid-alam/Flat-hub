@@ -40,7 +40,8 @@ function Routes() {
         <Stack.Screen name="welcome" options={{ headerShown: false }} />
       </Stack.Protected>
       <Stack.Protected guard={!!data}>
-        <Stack.Screen name="index" options={{ headerShown: false, title: 'Kitty' }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="flat" options={{ presentation: 'modal', title: 'The flat' }} />
         <Stack.Screen name="spend" options={{ presentation: 'modal', title: 'Add a spend' }} />
         <Stack.Screen name="topup" options={{ presentation: 'modal', title: 'Record a top-up' }} />
         <Stack.Screen name="away" options={{ title: 'Away' }} />
@@ -52,7 +53,6 @@ function Routes() {
         <Stack.Screen name="stock" options={{ title: 'Stock' }} />
         <Stack.Screen name="fridge" options={{ title: 'Fridge' }} />
         <Stack.Screen name="shopping" options={{ title: 'Shopping' }} />
-        <Stack.Screen name="duties" options={{ title: 'Duties', headerLeft: Back }} />
         <Stack.Screen name="duties/manage" options={{ title: 'Manage duties', headerLeft: Back }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
       </Stack.Protected>
@@ -60,8 +60,8 @@ function Routes() {
   );
 }
 
-/** The web build is deep-linkable: /duties opened cold has no history, and the app has no tab bar,
- *  so without this there is no way back to the Kitty. */
+/** The web build is deep-linkable: /duties/manage opened cold has no history and sits outside the tab
+ *  bar, so without this there is no way back to the Kitty. */
 function Back() {
   return (
     <Pressable

@@ -10,19 +10,18 @@ import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
 import { sayError } from '@/lib/util';
 import { reverseSpend } from '@/ui/activity';
-import { Block, Choice, ErrorText, Field, MagnetButton, SectionLabel, T, Tile, Toast } from '@/ui/kit';
+import { Block, Choice, ErrorText, Field, MagnetButton, Row, Rule, SectionLabel, T, Tile, Toast } from '@/ui/kit';
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
 
 type Logged = { spend: Parameters<typeof reverseSpend>[0]; name: string; undone?: boolean };
 
-export function QuickAdd({ onPicking }: { onPicking?: (picking: boolean) => void }) {
+export function QuickAdd() {
   const { products, household, reload } = useHousehold();
   const [picked, setPicked] = useState<ProductRow | null>(null);
   const [logged, setLogged] = useState<Logged | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
   const favourites = products.filter((p) => p.favourite);
-  useEffect(() => onPicking?.(!!picked), [picked, onPicking]);
 
   // The toast stays long enough to reach Undo, then goes; the entry stays reversible from Recent.
   useEffect(() => {
@@ -85,6 +84,12 @@ export function QuickAdd({ onPicking }: { onPicking?: (picking: boolean) => void
           }}
         />
       )}
+      <Rule />
+      <Row
+        label="Import a Zepto order"
+        icon={{ ios: 'doc.viewfinder', android: 'receipt_long' }}
+        onPress={() => router.push('/import')}
+      />
       {logged && (
         <Toast
           message={

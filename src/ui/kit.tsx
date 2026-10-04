@@ -123,6 +123,10 @@ export function useInk(): Ink {
 
 // ---------------------------------------------------------------- layout
 
+/** The tab bar's own height. `Screen` adds the bottom safe-area inset itself, so a tab screen passes
+ *  exactly this as `padBottom` — the bar is absolute, and 56 + inset is its full height. */
+export const TAB_BAR = 56;
+
 export function Screen({
   children,
   scroll = true,

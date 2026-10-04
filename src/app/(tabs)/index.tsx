@@ -1,21 +1,21 @@
-// Kitty home, V2 "Card Stack": logo, the kitty, your top-up (brass, the one accent), quick add, who has topped up,
-// recent entries, doorways, and this month's card. A floating "+ Add" pill opens the full spend form.
+// Kitty tab, V2 "Card Stack": logo, the kitty, your top-up (brass, the one accent), quick add, who has
+// topped up, recent entries. The link pile left this screen when the tab bar arrived: fridge, shopping,
+// stock, duties and the statements live in their own tabs, and the occasional things (away, to reimburse,
+// mates, favourites, record a top-up) sit behind the people button, on /flat.
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { poolCash, position, suggestedTopup, unreimbursed } from '@/domain/kitty';
-import { expiringSoon, isEmpty, shoppingList } from '@/domain/stock';
+import { poolCash, position, suggestedTopup } from '@/domain/kitty';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
+import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { monthLabel, monthOf, sayError, thisMonth } from '@/lib/util';
 import { ActivitySlip, feed } from '@/ui/activity';
-import { isOpen, useDuties } from '@/ui/duties';
 import { QuickAdd } from '@/ui/quickadd';
-import { monthName, monthRows, statusFor, toneFor } from '@/ui/statement';
-import { SOON } from '@/ui/stock';
+import { monthName } from '@/ui/statement';
 import {
   Avatars,
   Block,
@@ -23,66 +23,26 @@ import {
   Hero,
   Icon,
   Logo,
-  MagnetButton,
-  MonthCard,
   Position,
-  Row,
   Rule,
   Screen,
   SectionLabel,
   T,
+  TAB_BAR,
   tokens,
   usePalette,
 } from '@/ui/kit';
 
-const FADE = 92; // the scrim under the floating + Add pill, as the artboard specifies
-
 export default function KittyHome() {
   const c = usePalette();
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const h = useDuties();
-  const [picking, setPicking] = useState(false); // the + Add pill steps aside while a quick-add confirm is open
-  const { books, me, members, holder, isTreasurer, entries, spends, household, closes, reload } = h;
-  // ponytail: both scans are O(lots × moves); memoised per load, which is enough at a flat's volume.
-  // Sum the ledger into a Map<lot_id, qty> once if a few years of history ever makes this visible.
-  const { short, expiring } = useMemo(
-    () => ({
-      short: shoppingList(h.products, h.lots, h.moves, h.shopping),
-      expiring: expiringSoon(
-        h.lots.filter((l) => l.location !== 'pantry' && !isEmpty(l.id, h.moves)),
-        new Date().toISOString(),
-        SOON,
-      ),
-    }),
-    [h.products, h.lots, h.moves, h.shopping],
-  );
+  const h = useHousehold();
+  const { books, me, members, holder, isTreasurer, entries, spends, household, reload } = h;
   useFocusEffect(
     useCallback(() => {
       reload();
     }, [reload]),
   );
-
-  // Today's duty: the viewer's own open turn if they have one, otherwise the first one due.
-  const openToday = h.todays.filter((r) => isOpen(r.outcome));
-  const myTurn = openToday.find((r) => r.memberId === me.id);
-  const nextTurn = myTurn ?? openToday[0];
-  const whoseTurn = nextTurn
-    ? myTurn
-      ? 'yours'
-      : nextTurn.memberId
-        ? h.name(nextTurn.memberId).split(' ')[0]
-        : 'nobody free'
-    : '';
-  // ponytail: name + whose turn + count wraps this row onto two lines at 390px. When more than one
-  // is due the count is the news and the screen behind it lists the names, so the name goes.
-  const dutyDetail = nextTurn
-    ? openToday.length > 1
-      ? `${whoseTurn} · ${openToday.length} due`
-      : `${nextTurn.duty.name} · ${whoseTurn}`
-    : h.todays.length
-      ? 'all done'
-      : 'none';
 
   const month = thisMonth();
   const inMonth = (iso: string) => monthOf(iso) === month;
@@ -97,22 +57,19 @@ export default function KittyHome() {
   const totalIn = [...putIn.values()].reduce((a, p) => a + p, 0);
 
   const mine = position(books, me.id);
-  const owed = unreimbursed(spends, entries);
-  const rows = monthRows(spends, entries, month);
-  const monthCount = rows.monthSpends.length + rows.monthEntries.length;
   const heroWidth = Math.min(width, 560) - 32 - 42;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.ground }}>
-      <Screen padBottom={FADE}>
+      <Screen padBottom={TAB_BAR}>
         <View style={styles.header}>
           <Logo />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <SectionLabel>{monthLabel(month)}</SectionLabel>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Mates"
-              onPress={() => router.push('/mates')}
+              accessibilityLabel="The flat — away, to reimburse, mates and favourites"
+              onPress={() => router.push('/flat')}
               style={({ pressed }) => [
                 styles.mates,
                 { borderColor: c.line, backgroundColor: c.surface },
@@ -168,7 +125,7 @@ export default function KittyHome() {
           />
         )}
 
-        <QuickAdd onPicking={setPicking} />
+        <QuickAdd />
 
         <Block tone="raised">
           <View style={styles.spread}>
@@ -204,85 +161,7 @@ export default function KittyHome() {
             </>
           )}
         </Block>
-
-        <Block style={{ gap: 0, paddingVertical: 4 }}>
-          <Row
-            label="Import Zepto order"
-            icon={{ ios: 'doc.viewfinder', android: 'receipt_long' }}
-            onPress={() => router.push('/import')}
-          />
-          <Rule />
-          <Row
-            label="Record a top-up"
-            icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}
-            onPress={() => router.push('/topup')}
-          />
-          <Rule />
-          <Row
-            label="Fridge"
-            icon={{ ios: 'refrigerator', android: 'kitchen' }}
-            detail={expiring.length ? `${expiring.length} to use` : 'none'}
-            onPress={() => router.push('/fridge')}
-          />
-          <Rule />
-          <Row
-            label="Shopping"
-            icon={{ ios: 'cart', android: 'shopping_cart' }}
-            detail={short.length ? String(short.length) : 'none'}
-            onPress={() => router.push('/shopping')}
-          />
-          <Rule />
-          <Row
-            label="Today's duty"
-            icon={{ ios: 'checkmark.circle', android: 'task_alt' }}
-            detail={dutyDetail}
-            onPress={() => router.push('/duties')}
-          />
-          <Rule />
-          <Row label="Away" icon={{ ios: 'airplane', android: 'flight' }} onPress={() => router.push('/away')} />
-          <Rule />
-          <Row
-            label="To reimburse"
-            icon={{ ios: 'arrow.uturn.left', android: 'undo' }}
-            detail={owed.length ? `${owed.length} · ${formatINR(owed.reduce((a, s) => a + s.total_paise, 0))}` : 'none'}
-            onPress={() => router.push('/reimburse')}
-          />
-        </Block>
-
-        <View style={{ gap: 10 }}>
-          <SectionLabel>Statements</SectionLabel>
-          <MonthCard
-            month={monthName(month)}
-            pill={`${formatINR(rows.spent)} · ${monthCount} ${monthCount === 1 ? 'entry' : 'entries'}`}
-            status={statusFor(month, closes ?? [])}
-            tone={toneFor(month)}
-            height={180}
-            onPress={() => router.push({ pathname: '/statement/[month]', params: { month } })}
-          />
-          <Block style={{ gap: 0, paddingVertical: 4 }}>
-            <Row
-              label="Every month"
-              icon={{ ios: 'calendar', android: 'calendar_month' }}
-              onPress={() => router.push('/statement')}
-            />
-          </Block>
-        </View>
       </Screen>
-
-      {!picking && (
-        <View pointerEvents="none" style={[styles.fade, { height: FADE + insets.bottom }]}>
-          {[0, 0.35, 0.7, 1].map((o, i) => (
-            <View key={o} style={{ flex: 1, opacity: o, backgroundColor: c.ground, marginTop: i ? -1 : 0 }} />
-          ))}
-        </View>
-      )}
-      {!picking && (
-        <View pointerEvents="box-none" style={[styles.addDock, { bottom: insets.bottom + 16 }]}>
-          <View style={{ width: 148 }}>
-            <MagnetButton label="Add" icon={{ ios: 'plus', android: 'add' }} onPress={() => router.push('/spend')} />
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -442,8 +321,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 60 },
   mates: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   spread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
-  addDock: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   pill: {
     minHeight: 56,
     borderRadius: 9999,
