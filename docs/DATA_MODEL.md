@@ -28,7 +28,13 @@ pool_entry (id, household_id, kind 'contribution'|'reimbursement',
             member_id, amount_paise bigint, occurred_at, note,
             spend_id null,                                      -- reimbursement → the own-pocket spend it repays
             reverses_id null)
+month_close(id, household_id, month 'YYYY-MM', closed_at, closed_by → member,
+            unique (household_id, month))                     -- M5: the month is frozen
 ```
+
+- **Month close (M5):** `close_month(id, household_id, month)` is treasurer-only, refuses a month that is not strictly before the current IST month, and is idempotent (a second call is a no-op). `reopen_month(household_id, month)` deletes the row and is treasurer-only too. `month_close` has no UPDATE grant; INSERT and DELETE are restricted to `household.pool_holder_id` by policy, so a mate can't freeze a month behind the RPC's back.
+- Once a month is closed, BEFORE triggers reject: a `member_absence` whose `from_date…to_date` touches it (including a run that starts in an open month), the DELETE of such an absence, and a `spend` or `pool_entry` whose `occurred_at` falls in it (IST, `Asia/Kolkata`, same boundary as `istDate()`). The error is `P0001` with the message `'July 2026 is closed'`.
+- **The one way in is a reversal:** a row with `reverses_id` set always writes, because it is allocated in its target's month and nets to zero there. A reversal of a reversal stays impossible (the mirror trigger requires a target with `reverses_id null`).
 
 - **Reversal sign:** an original row has a positive amount; its reversal has the **negated** amount, the same kind/member/payer, and `reverses_id` set (one reversal per row). A trigger rejects a reversal that doesn't mirror its target exactly, so every Σ below is a plain sum.
 - Creating a household, joining with an invite code, handing over the kitty, and saving a spend with its lines go through RPCs (`create_household`, `join_household`, `set_pool_holder`, `add_spend`). `add_spend` also stores `spend.extraction` (the raw LLM output behind a Zepto import) and each line's `product_id`. A deferred constraint trigger enforces invariant 1. Ledgers have no UPDATE/DELETE grants.
