@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
+import { matchProduct } from '@/domain/extraction';
 import { linesBalance } from '@/domain/kitty';
 import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
@@ -9,13 +10,15 @@ import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
 import { AmountBlock, BalanceBar, roundingLine } from '@/ui/capture';
 import { Block, Choice, ErrorText, Field, Icon, MagnetButton, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
+import { usePutAway } from '@/ui/putaway';
 
 type Kind = 'item' | 'fee' | 'discount';
 type Line = { id: string; name: string; amount: string; kind: Kind };
 
 export default function AddSpend() {
   const c = usePalette();
-  const { me, members, household, reload } = useHousehold();
+  const { me, members, household, products, reload } = useHousehold();
+  const putAway = usePutAway();
   const [amount, setAmount] = useState('');
   const [source, setSource] = useState<SpendRow['source']>('local');
   const [store, setStore] = useState('');
@@ -41,6 +44,12 @@ export default function AddSpend() {
   async function save() {
     setBusy(true);
     setError(null);
+    // One match per line, used for both the spend_line and the lot that may follow it.
+    const named = parsed.map((l) => ({
+      ...l,
+      name: l.name.trim(),
+      product_id: l.kind === 'item' ? matchProduct(l.name, products)?.id ?? null : null,
+    }));
     const { error } = await supabase.rpc('add_spend', {
       p_spend: {
         id,
@@ -51,10 +60,12 @@ export default function AddSpend() {
         paid_from: paidFrom,
         total_paise: total,
       },
-      p_lines: parsed.map((l) => ({ id: l.id, name: l.name.trim(), line_total_paise: l.paise, kind: l.kind })),
+      p_lines: named.map((l) => ({ id: l.id, name: l.name, line_total_paise: l.paise, kind: l.kind, product_id: l.product_id })),
     });
     setBusy(false);
     if (error) return setError(error.message);
+    // ponytail: /spend has no qty field, so a tracked line opens its lot at qty 1 of the base unit.
+    await putAway.ask(named.map((l) => ({ id: l.id, name: l.name, product_id: l.product_id, qty: 1, unit: null, kind: l.kind })));
     await reload();
     router.back();
   }
@@ -171,6 +182,7 @@ export default function AddSpend() {
         disabled={busy || !total || unbalanced}
         onPress={save}
       />
+      {putAway.sheet}
     </Screen>
   );
 }

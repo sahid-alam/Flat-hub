@@ -4,37 +4,19 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { istDate } from '@/domain/kitty';
-import { shoppingList, type Lot, type Move } from '@/domain/stock';
-import { useHousehold, type ProductRow } from '@/lib/books';
+import { shoppingList } from '@/domain/stock';
+import { useHousehold, type ShoppingRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
 import { today } from '@/lib/util';
 import { Block, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
-
-type ShoppingRow = {
-  id: string;
-  product_id: string | null;
-  name: string;
-  added_by: string;
-  done_by_spend_line_id: string | null;
-  done_at: string | null;
-};
-type StockProductRow = ProductRow & { min_qty: number | null; base_unit: 'g' | 'ml' | 'pc' };
 
 const qty = (n: number, unit: string) =>
   unit === 'pc' ? `${n} pc` : n >= 1000 ? `${+(n / 1000).toFixed(2)} ${unit === 'ml' ? 'L' : 'kg'}` : `${n} ${unit}`;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 export default function Shopping() {
-  // ponytail: books.tsx is another agent's this milestone. It must expose lots/moves/shopping and select
-  // min_qty + base_unit on product; one cast names that contract here and goes away at integration.
-  const hh = useHousehold() as unknown as Omit<ReturnType<typeof useHousehold>, 'products'> & {
-    lots: Lot[];
-    moves: Move[];
-    shopping: ShoppingRow[];
-    products: StockProductRow[];
-  };
-  const { household, me, products, lots, moves, shopping, name, reload } = hh;
+  const { household, me, products, lots, moves, shopping, name, reload } = useHousehold();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

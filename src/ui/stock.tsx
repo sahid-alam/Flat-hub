@@ -1,49 +1,17 @@
-// Shared pieces for /fridge and /stock: the data load, quantity and expiry wording, and the warm
-// (never clay) marker chip. The maths lives in @/domain/stock; nothing here decides an order.
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+// Shared pieces for /fridge and /stock: quantity and expiry wording, and the warm (never clay)
+// marker chip. The maths lives in @/domain/stock; the rows come from useHousehold().
 import { Pressable, View } from 'react-native';
 
-import type { Lot, Move, StockProduct } from '@/domain/stock';
-import { useHousehold } from '@/lib/books';
-import { supabase } from '@/lib/supabase';
+import { useHousehold, type ProductRow } from '@/lib/books';
 import { T, usePalette } from '@/ui/kit';
 
-export type LotRow = Lot & { created_at: string };
-export type MoveRow = Move & { reason: 'purchase' | 'consume' | 'discard' | 'adjust' };
-export type StockProductRow = StockProduct & { base_unit: 'g' | 'ml' | 'pc'; category: string | null };
+export type { LotRow, MoveRow } from '@/lib/books';
+export type StockProductRow = ProductRow;
 
-/**
- * Lots, the stock_move ledger and the products behind them.
- * ponytail: its own fetch because books.tsx is another agent's file and doesn't carry min_qty/base_unit
- * yet. Same field names as contract 3, so integrating is swapping this body for useHousehold().
- */
+/** Lots, the stock_move ledger and the products behind them — all from the one household load. */
 export function useStock() {
-  const { household } = useHousehold();
-  const id = household.id;
-  const [data, setData] = useState<{ lots: LotRow[]; moves: MoveRow[]; products: StockProductRow[] } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    const [lots, moves, products] = await Promise.all([
-      supabase.from('lot').select('id, product_id, location, expiry_date, opened, received_at, created_at').eq('household_id', id),
-      supabase.from('stock_move').select('lot_id, delta_qty, reason').eq('household_id', id),
-      supabase.from('product').select('id, name, category, track_stock, min_qty, base_unit').eq('household_id', id).order('name'),
-    ]);
-    const bad = [lots, moves, products].find((r) => r.error);
-    if (bad) return setError(bad.error!.message);
-    setError(null);
-    setData({ lots: lots.data!, moves: moves.data!, products: products.data! });
-  }, [id]);
-
-  // Reloads on every focus, so coming back from Put away or the shopping list shows the new lots.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
-
-  return { ...(data ?? { lots: [], moves: [], products: [] }), loading: data === null, error, reload };
+  const { lots, moves, products, reload } = useHousehold();
+  return { lots, moves, products, loading: false, error: null as string | null, reload };
 }
 
 /** 1200 g → "1.2 kg", 1800 ml → "1.8 L", 4 pc → "4 pc". Base units only; the DB holds 3 decimals. */

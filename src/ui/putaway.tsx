@@ -10,7 +10,7 @@ import { toBase } from '@/domain/stock';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
-import { Choice, DateField, ErrorText, MagnetButton, SectionLabel, T, usePalette } from '@/ui/kit';
+import { Choice, DateField, ErrorText, Field, MagnetButton, SectionLabel, T, usePalette } from '@/ui/kit';
 
 type Location = 'fridge' | 'freezer' | 'pantry';
 
@@ -24,7 +24,7 @@ export type PutAwayLine = {
   kind: 'item' | 'fee' | 'discount';
 };
 
-type Draft = { lotId: string; line: PutAwayLine; product: ProductRow; location: Location; expiry: string };
+type Draft = { lotId: string; line: PutAwayLine; product: ProductRow; location: Location; expiry: string; qty: string };
 
 /** Where a product goes by default. Category is free text, so this reads it loosely. */
 function defaultLocation(category: string | null): Location {
@@ -41,10 +41,9 @@ function openingQty(line: PutAwayLine, product: ProductRow, uoms: { product_id: 
   if (mapped !== null) return mapped;
   const u = line.unit.toLowerCase();
   if ((u === 'kg' && product.base_unit === 'g') || (u === 'l' && product.base_unit === 'ml')) return line.qty * 1000;
-  // ponytail: an unmapped unit lands as its own number, as does a line with no unit at all
-  // (/spend and quick-add both send qty 1, unit null, so a 5 kg bag of atta opens as 1 g).
-  // The sheet shows the number before it is saved; mapping the unit under the product
-  // (product_uom) and a compensating 'adjust' move fixes a lot that went in wrong.
+  // ponytail: an unmapped unit is only a starting guess — /spend sends qty 1 with no unit at all.
+  // The sheet puts it in an editable field, so the mate fixes a 5 kg bag that opened as 1 g before
+  // it ever reaches the ledger; mapping the unit under the product (product_uom) makes it automatic.
   return line.qty;
 }
 
@@ -60,7 +59,7 @@ function openingQty(line: PutAwayLine, product: ProductRow, uoms: { product_id: 
  *   {putAway.sheet}
  */
 export function usePutAway() {
-  const { products, household, reload } = useHousehold();
+  const { products, household, uoms, reload } = useHousehold();
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const done = useRef<(() => void) | null>(null);
@@ -72,7 +71,14 @@ export function usePutAway() {
       for (const line of lines) {
         const product = line.kind === 'item' && line.product_id ? products.find((p) => p.id === line.product_id) : undefined;
         if (product?.track_stock)
-          rows.push({ lotId: newId(), line, product, location: defaultLocation(product.category), expiry: '' });
+          rows.push({
+            lotId: newId(),
+            line,
+            product,
+            location: defaultLocation(product.category),
+            expiry: '',
+            qty: String(openingQty(line, product, uoms)),
+          });
         else if (line.kind === 'item') rest.push(line.name);
       }
       if (rows.length === 0) return resolve();
@@ -109,7 +115,6 @@ function PutAwaySheet({
   onSaved: () => Promise<void>;
 }) {
   const c = usePalette();
-  const { uoms } = useHousehold();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,6 +122,9 @@ function PutAwaySheet({
 
   // `everything` is the Skip path: the same lots, in the pantry, with no expiry, so nothing is lost.
   async function save(as: 'chosen' | 'pantry') {
+    // put_away only writes an opening move when qty > 0, so a blank one would leave a lot that reads
+    // as empty for ever. Every exit — the button, Skip and the back gesture — comes through here.
+    if (!drafts.every((d) => Number(d.qty) > 0)) return setError('Enter how much of each, even a rough guess.');
     setBusy(true);
     setError(null);
     const { error } = await supabase.rpc('put_away', {
@@ -127,7 +135,7 @@ function PutAwaySheet({
         spend_line_id: d.line.id,
         location: as === 'pantry' ? 'pantry' : d.location,
         expiry_date: as === 'pantry' ? null : d.expiry || null,
-        qty: openingQty(d.line, d.product, uoms),
+        qty: Number(d.qty),
       })),
     });
     setBusy(false);
@@ -155,15 +163,16 @@ function PutAwaySheet({
 
             {drafts.map((d, i) => (
               <View key={d.lotId} style={{ backgroundColor: c.surface, borderRadius: 24, padding: 16, gap: 10 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-                  <T size={16} weight="700" style={{ flex: 1 }}>
-                    {d.line.name}
-                  </T>
-                  {/* What will actually hit the ledger, so a wrong unit is caught before the tap. */}
-                  <T size={16} weight="700" num soft>
-                    {openingQty(d.line, d.product, uoms)} {d.product.base_unit}
-                  </T>
-                </View>
+                <T size={16} weight="700">
+                  {d.line.name}
+                </T>
+                {/* What will actually hit the ledger. /spend sends no quantity, so it is editable here. */}
+                <Field
+                  label={`How much? · ${d.product.base_unit}`}
+                  value={d.qty}
+                  onChangeText={(qty) => set(i, { qty })}
+                  keyboardType="decimal-pad"
+                />
                 <SectionLabel>Where does it go?</SectionLabel>
                 <Choice
                   value={d.location}

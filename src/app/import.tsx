@@ -16,6 +16,7 @@ import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, today } from '@/lib/util';
 import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
 import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
+import { usePutAway } from '@/ui/putaway';
 
 type Kind = 'item' | 'fee' | 'discount';
 type Line = {
@@ -63,6 +64,7 @@ async function readBase64(uri: string): Promise<string> {
 export default function ImportOrder() {
   const c = usePalette();
   const { me, members, household, products, reload } = useHousehold();
+  const putAway = usePutAway(); // above the early returns below: hooks run in the same order every render
   const [text, setText] = useState('');
   const [reading, setReading] = useState<string | null>(null); // what is being read, for the skeleton
   const run = useRef(0); // bumped by Cancel: a reading that comes back late is dropped
@@ -269,6 +271,13 @@ export default function ImportOrder() {
         return supabase.rpc('learn_alias', { p_product_id: p.id, p_alias: l.name.trim() });
       }),
     );
+    // Tracked items become lots. Resolves at once when nothing on the bill is tracked; awaited
+    // before router.back(), which unmounts the sheet.
+    await putAway.ask(
+      parsed
+        .filter((l) => l.kind === 'item')
+        .map((l) => ({ id: l.id, name: l.name.trim(), product_id: l.product_id, qty: l.qty, unit: l.unit, kind: l.kind })),
+    );
     await reload();
     router.back();
   }
@@ -468,6 +477,7 @@ export default function ImportOrder() {
         onPress={save}
       />
       <MagnetButton label="Start over" outline disabled={busy} onPress={() => setDraft(null)} />
+      {putAway.sheet}
     </Screen>
   );
 }
