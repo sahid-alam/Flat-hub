@@ -856,7 +856,9 @@ const s = StyleSheet.create({
     gap: 8,
   },
   buttonLabel: { fontFamily: UI['700'], fontSize: 17 },
-  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  // gap 6, not 8: Spending's four period chips measure 374.4pt at gap 8, which is 0.4pt past what a
+  // 390pt phone has room for — one hair from wrapping into the ragged two rows this replaced.
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
     minHeight: 48,
     paddingHorizontal: 18,
