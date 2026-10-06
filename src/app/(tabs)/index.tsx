@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
-import { poolCash, position, suggestedTopup } from '@/domain/kitty';
+import { poolCash, position, suggestedTopup, unreimbursed } from '@/domain/kitty';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { newId } from '@/lib/id';
@@ -23,6 +23,7 @@ import {
   Icon,
   Logo,
   Position,
+  Row,
   Rule,
   Screen,
   SectionLabel,
@@ -57,6 +58,13 @@ export default function KittyHome() {
 
   const mine = position(books, me.id);
   const heroWidth = Math.min(width, 560) - 32 - 42;
+
+  // The treasurer's own two jobs. Both already lived behind the people button on /flat, three and
+  // four taps deep, with nothing on this screen saying there was anything waiting. Same rows, same
+  // numbers, on the first screen he opens. Reads what is already loaded — no new queries.
+  const owed = isTreasurer ? unreimbursed(spends, entries) : [];
+  const owedPaise = owed.reduce((a, s) => a + s.total_paise, 0);
+  const owedTo = new Set(owed.map((s) => s.paid_by)).size;
 
   return (
     // the tab navigator's sceneStyle pads the top inset for every tab, so no SafeAreaView here
@@ -100,6 +108,25 @@ export default function KittyHome() {
             </T>
           </View>
         </Block>
+
+        {isTreasurer && (
+          // raised, not brass: the brass on this screen is already spent on your own top-up card.
+          <Block tone="raised" style={{ gap: 0, paddingVertical: 4 }}>
+            <Row
+              label="To reimburse"
+              icon={{ ios: 'arrow.uturn.left', android: 'undo' }}
+              detail={owed.length ? `${formatINR(owedPaise)} · ${owedTo} ${owedTo === 1 ? 'mate' : 'mates'}` : 'all square'}
+              onPress={() => router.push('/reimburse')}
+            />
+            <Rule />
+            <Row
+              label="Record a top-up"
+              icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}
+              detail={`${toppedUp.length} of ${current.length} in`}
+              onPress={() => router.push('/topup')}
+            />
+          </Block>
+        )}
 
         {!paidThisMonth && (
           <TopUpCard

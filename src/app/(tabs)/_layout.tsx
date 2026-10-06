@@ -3,10 +3,11 @@
 // The bar is chrome, so its brass sits outside each screen's one-accent budget.
 import { router } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs'; // JS tabs, not unstable-native-tabs: this ships as a web build.
-import { View, type ColorValue } from 'react-native';
+import { useState } from 'react';
+import { Modal, Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, T, TAB_BAR, usePalette } from '@/ui/kit';
+import { Block, Icon, Row, Rule, T, TAB_BAR, usePalette } from '@/ui/kit';
 
 type IconName = { ios: string; android: string };
 
@@ -30,7 +31,12 @@ function tab(label: string, icon: IconName, aria: string) {
 export default function TabLayout() {
   const c = usePalette();
   const insets = useSafeAreaInsets();
+  // Which way in: the manual form, or a Zepto order. Most of this flat's groceries arrive by Zepto,
+  // and /import used to hang off one row under the favourites grid — five taps and a scroll behind
+  // the form it is more common than.
+  const [asking, setAsking] = useState(false);
   return (
+    <>
     <Tabs
       screenOptions={{
         headerShown: false, // every tab screen draws its own pinned header
@@ -62,7 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="add"
         options={{
-          ...tab('Add', { ios: 'plus', android: 'add' }, 'Add a spend — opens the spend sheet'),
+          ...tab('Add', { ios: 'plus', android: 'add' }, 'Add — type a spend, or import a Zepto order'),
           // The centre is an action, not a destination: a filled mark, never the selected state.
           // The icon box is 31x28 by default (Apple HIG sizes), so the 34pt mark gets its own.
           tabBarIconStyle: { width: 34, height: 34 },
@@ -87,8 +93,8 @@ export default function TabLayout() {
         }}
         listeners={{
           tabPress: (e) => {
-            e.preventDefault(); // stay on the tab you were on; /spend opens over it as a modal
-            router.push('/spend');
+            e.preventDefault(); // stay on the tab you were on; the sheet opens over it
+            setAsking(true);
           },
         }}
       />
@@ -102,5 +108,67 @@ export default function TabLayout() {
         options={tab('Spending', { ios: 'chart.line.uptrend.xyaxis', android: 'show_chart' }, 'Spending — where the money went')}
       />
     </Tabs>
+    <AddSheet open={asking} onClose={() => setAsking(false)} />
+    </>
+  );
+}
+
+/** The two ways a spend gets in. Both routes are modals of their own, so this one closes first —
+ *  otherwise the sheet sits behind /spend and is still there when you come back.
+ *  ponytail: the scrim and the rounded lip are the same shape as the fridge's lot sheet
+ *  (src/ui/fridge.tsx:270-277); a shared <Sheet> is worth extracting at the third copy, not the second. */
+function AddSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const c = usePalette();
+  const insets = useSafeAreaInsets();
+  const go = (path: '/spend' | '/import') => {
+    onClose();
+    router.push(path);
+  };
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* The backdrop is the sheet's sibling, never its parent: as a wrapper it made every row a
+            <button> inside a <button>, which is invalid HTML and reaches a screen reader as one
+            control. Esc still closes through onRequestClose. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          onPress={onClose}
+          style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }]}
+        />
+        <View
+          role="dialog"
+          accessibilityLabel="Add a spend"
+          style={{ backgroundColor: c.ground, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 8 }}>
+          <View style={{ alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.line }} />
+          <View style={{ padding: 16, paddingBottom: insets.bottom + 16, gap: 12 }}>
+            <Block style={{ gap: 0, paddingVertical: 4 }}>
+              <Row
+                label="Add a spend"
+                icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}
+                detail="type it"
+                onPress={() => go('/spend')}
+              />
+              <Rule />
+              <Row
+                label="Import a Zepto order"
+                icon={{ ios: 'doc.viewfinder', android: 'receipt_long' }}
+                detail="read the bill"
+                onPress={() => go('/import')}
+              />
+            </Block>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={onClose}
+              style={({ pressed }) => [{ minHeight: 48, alignItems: 'center', justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
+              <T size={15} weight="700" soft>
+                Cancel
+              </T>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
