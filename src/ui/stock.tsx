@@ -39,12 +39,23 @@ export function daysLabel(days: number, expiry: string): string {
   return `Good till ${MONTHS[Number(expiry.slice(5, 7)) - 1]} ${expiry.slice(0, 4)}`;
 }
 
-/** Warm marker: expiring, expired or low. DESIGN.md keeps clay for failed saves, so this is warnBg/warnFg. */
-export function WarnChip({ label }: { label: string }) {
+/** Warm marker: expiring or low — a nudge, so warnBg/warnFg, never clay. `bad` is the one step past
+ *  that: food already gone off, which is a loss and not a nudge, so it wears the clay border and ink
+ *  that "Threw away" wears in the lot sheet. */
+export function WarnChip({ label, bad }: { label: string; bad?: boolean }) {
   const c = usePalette();
   return (
-    <View style={{ alignSelf: 'flex-start', borderRadius: 9999, backgroundColor: c.warnBg, paddingHorizontal: 8, paddingVertical: 2 }}>
-      <T size={12} weight="700" color={c.warnFg} style={{ lineHeight: 16 }}>
+    <View
+      style={{
+        alignSelf: 'flex-start',
+        borderRadius: 9999,
+        backgroundColor: bad ? 'transparent' : c.warnBg,
+        borderWidth: bad ? 1.5 : 0,
+        borderColor: c.negative,
+        paddingHorizontal: 8,
+        paddingVertical: bad ? 0.5 : 2,
+      }}>
+      <T size={12} weight="700" color={bad ? c.negative : c.warnFg} style={{ lineHeight: 16 }}>
         {label}
       </T>
     </View>

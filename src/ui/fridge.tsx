@@ -190,7 +190,7 @@ function LotCard({
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
         {days !== null && lot.expiry_date !== null ? (
           days <= SOON ? (
-            <WarnChip label={daysLabel(days, lot.expiry_date)} />
+            <WarnChip label={daysLabel(days, lot.expiry_date)} bad={days < 0} />
           ) : (
             <Chip kind="pool" label={daysLabel(days, lot.expiry_date)} />
           )

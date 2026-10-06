@@ -174,6 +174,15 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     };
   }, [userId]);
 
+  // Tabs stay mounted, so useFocusEffect never fires when the flat reopens a backgrounded
+  // Home Screen install — that resume is the stale-data case the focus reloads cannot see.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onShow = () => document.visibilityState === 'visible' && void reload();
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
+  }, [reload]);
+
   const books = useMemo<Books | null>(
     () =>
       data

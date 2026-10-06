@@ -28,19 +28,23 @@ in the Kitty header (`src/app/flat.tsx`).
   `/fridge` `/shopping` `/stock` redirect onto the right Kitchen segment, `/duties/manage` deep-linked
   falls back to the Kitty, and the Add tab opens `/spend` without ever taking the selected state.
 - Spending's figures were cross-checked against `/statement/2026-09` and agree to the rupee.
-- Screenshots of both themes in `docs/screenshots/nav/` (22 files).
+- Screenshots of both themes in `docs/screenshots/nav/` (24 files).
+
+- Both reviews are done: 14 findings, 13 fixed, 2 of the rest refused with a reason and 2 reviewer
+  mistakes corrected (see the "Nav review" commits). The two criticals were real — Spending's
+  Zepto/local percentages disagreed with the statement for the same month, and the category bars
+  were scaled to the widest row rather than to the percentage printed beside them.
+- The fridge's "expired" pill is now clay, the same treatment "Threw away" wears in the lot sheet.
+  Expiring and low stay warm: a nudge is not a loss.
+- A backgrounded Home Screen install now refetches on `visibilitychange` — `useFocusEffect` only
+  fires on navigation, so tabs that stay mounted could serve hours-old figures after a resume.
 
 ## Still open
 
-1. **Design QA** has not been run. The navigation/regression review has: its findings are fixed on
-   `main` (see the "Nav review" commit), and `docs/screenshots/nav/` was re-shot for every screen
-   that changed, plus a new `*-3b-kitchen-shopping-bought` pair showing the Bought block.
-2. **Deploy.** Still not pushed and not deployed. The live flat is on the old build.
-3. The fridge's "expired" pill uses brass, not clay, although expiry is a negative state. That is the
-   shipped M3 fridge, not something this milestone introduced — worth settling in design QA.
-4. **Android APK** — `eas build -p android --profile preview`, free tier. iPhone sideloading needs
+1. **Deploy.** Still not pushed and not deployed. The live flat is on the old build.
+2. **Android APK** — `eas build -p android --profile preview`, free tier. iPhone sideloading needs
    Apple's $99/year account, so the Home Screen web app stays the answer there.
-5. Push reminders for duties would need a service worker, VAPID keys and a Home Screen install on
+3. Push reminders for duties would need a service worker, VAPID keys and a Home Screen install on
    iPhone. Deliberately not built.
 
 ## Local seed
