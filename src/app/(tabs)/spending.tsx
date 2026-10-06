@@ -55,6 +55,18 @@ export default function Spending() {
     <Screen padBottom={TAB_BAR}>
       <Stack.Screen options={{ title: 'Spending' }} />
 
+      {/* Every tab names itself the same way — the Kitty by its logo, Kitchen and Duties by a title
+          row. Without this the tab opened on a row of floating chips with nothing saying where you
+          were. The Stack title above is invisible inside the tabs, which draw no header. */}
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+        <T size={22} weight="700">
+          Spending
+        </T>
+        <T size={13} soft>
+          Where the money went
+        </T>
+      </View>
+
       <Choice options={PERIODS} value={period} onChange={setPeriod} />
 
       <Block tone="stone">

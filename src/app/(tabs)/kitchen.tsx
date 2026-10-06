@@ -5,10 +5,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
 import { useHousehold } from '@/lib/books';
-import { FridgeBody, fridgeSoonCount } from '@/ui/fridge';
+import { FridgeBody } from '@/ui/fridge';
 import { Choice, Screen, T, TAB_BAR, usePalette } from '@/ui/kit';
 import { ShoppingBody, toBuyCount } from '@/ui/shopping';
-import { StockBody, stockItemCount } from '@/ui/stock';
+import { StockBody } from '@/ui/stock';
 
 const SEGMENTS = ['fridge', 'shopping', 'stock'] as const;
 type Seg = (typeof SEGMENTS)[number];
@@ -18,9 +18,7 @@ export default function Kitchen() {
   const { seg } = useLocalSearchParams<{ seg?: string }>();
   const { lots, moves, products, shopping } = useHousehold();
 
-  const soon = fridgeSoonCount(lots, moves, new Date().toISOString());
   const toBuy = toBuyCount(products, lots, moves, shopping);
-  const items = stockItemCount(lots, moves);
 
   // Landing segment: Shopping when anything is short, otherwise Fridge. An unknown ?seg falls back
   // to it rather than showing nothing.
@@ -39,15 +37,19 @@ export default function Kitchen() {
             Fridge, shopping and stock
           </T>
         </View>
-        {/* The counts ride on the labels: the chosen segment carries a check and an ink outline, so
-            the others are free to say how much is behind them. */}
+        {/* Equal thirds, one row. The counts used to ride on the labels, which pushed the three
+            chips onto two lines at 390pt — a wrapped switch reads as two controls. Each body
+            already says its own count ("5 still to buy", the expiry pills, the per-section totals),
+            so the switch only has to say which view you are on. */}
         <Choice<Seg>
+          fill
+          label="What to show"
           value={on}
           onChange={show}
           options={[
-            { value: 'fridge', label: on === 'fridge' ? 'Fridge' : `Fridge · ${soon} soon` },
-            { value: 'shopping', label: on === 'shopping' ? 'Shopping' : `Shopping · ${toBuy}` },
-            { value: 'stock', label: on === 'stock' ? 'Stock' : `Stock · ${items}` },
+            { value: 'fridge', label: 'Fridge' },
+            { value: 'shopping', label: 'Shopping' },
+            { value: 'stock', label: 'Stock' },
           ]}
         />
       </View>

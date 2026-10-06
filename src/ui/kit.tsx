@@ -580,18 +580,26 @@ export function MagnetButton({
 }
 
 /** One-of-n choice as 48pt pill chips; the chosen one gets a check and an ink outline. */
+/** `fill` makes the options share the row as equal parts — a segmented switch rather than a chip
+ *  group. Chips wrap by default, which is right for a long list of answers but wrong for a switch
+ *  between two or three views: a wrapped switch reads as two controls. Use it for three options at
+ *  most, or the parts get too narrow for their labels. `label` names the group for screen readers. */
 export function Choice<V extends string>({
   options,
   value,
   onChange,
+  fill,
+  label,
 }: {
   options: { value: V; label: string }[];
   value: V;
   onChange: (v: V) => void;
+  fill?: boolean;
+  label?: string;
 }) {
   const c = usePalette();
   return (
-    <View style={s.choiceRow} accessibilityRole="radiogroup">
+    <View style={s.choiceRow} accessibilityRole="radiogroup" accessibilityLabel={label}>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -602,6 +610,7 @@ export function Choice<V extends string>({
             onPress={() => onChange(o.value)}
             style={({ pressed }) => [
               s.chip,
+              fill && s.chipFill,
               { backgroundColor: on ? c.raised : 'transparent', borderColor: on ? c.ink : c.line },
               pressed && s.pressed,
             ]}>
@@ -857,6 +866,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  chipFill: { flex: 1, paddingHorizontal: 8, justifyContent: 'center' },
   chipLabel: { fontSize: 16 },
   input: { minHeight: 56, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 18, fontFamily: UI['500'] },
   dateRow: {
