@@ -32,7 +32,9 @@ in the Kitty header (`src/app/flat.tsx`).
 
 ## Still open
 
-1. **The two reviews** — navigation/regression and design QA — have not been run.
+1. **Design QA** has not been run. The navigation/regression review has: its findings are fixed on
+   `main` (see the "Nav review" commit), and `docs/screenshots/nav/` was re-shot for every screen
+   that changed, plus a new `*-3b-kitchen-shopping-bought` pair showing the Bought block.
 2. **Deploy.** Still not pushed and not deployed. The live flat is on the old build.
 3. The fridge's "expired" pill uses brass, not clay, although expiry is a negative state. That is the
    shipped M3 fridge, not something this milestone introduced — worth settling in design QA.

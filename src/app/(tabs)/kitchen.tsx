@@ -1,7 +1,8 @@
 // Kitchen: fridge, shopping and stock in one tab, because all three answer "what food do we have
 // or need". The segment lives in the URL, so /fridge, /shopping and /stock still land on the right
 // one and a deep link is shareable. The bodies are the shipped screens, unchanged in behaviour.
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { View } from 'react-native';
 
 import { useHousehold } from '@/lib/books';
@@ -16,14 +17,21 @@ type Seg = (typeof SEGMENTS)[number];
 export default function Kitchen() {
   const c = usePalette();
   const { seg } = useLocalSearchParams<{ seg?: string }>();
-  const { lots, moves, products, shopping } = useHousehold();
+  const { lots, moves, products, shopping, reload } = useHousehold();
 
-  const toBuy = toBuyCount(products, lots, moves, shopping);
+  // Tabs stay mounted and nothing else refetches, so without this the Kitchen can show hours-old
+  // stock: a mate ticks the last milk on their phone and you still see it here.
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
-  // Landing segment: Shopping when anything is short, otherwise Fridge. An unknown ?seg falls back
-  // to it rather than showing nothing.
-  const landing: Seg = toBuy > 0 ? 'shopping' : 'fridge';
-  const on: Seg = SEGMENTS.includes(seg as Seg) ? (seg as Seg) : landing;
+  // Landing segment: Shopping when anything is short, otherwise Fridge — latched at mount. Live,
+  // it used to move under your finger: ticking the last item dropped the count to zero and threw
+  // you off Shopping onto the Fridge mid-action.
+  const [landed] = useState<Seg>(() => (toBuyCount(products, lots, moves, shopping) > 0 ? 'shopping' : 'fridge'));
+  const on: Seg = SEGMENTS.includes(seg as Seg) ? (seg as Seg) : landed;
   const show = (next: Seg) => router.setParams({ seg: next });
 
   return (
@@ -53,10 +61,21 @@ export default function Kitchen() {
           ]}
         />
       </View>
+      {/* All three stay mounted, hidden rather than unmounted: switching away used to throw away
+          the typed "What do we need?" text, the open lot sheet and FridgeBody's pending-move map,
+          which is what stops a retry minting a second stock_move.
+          ponytail: one shared ScrollView, so the scroll position is shared too — per-segment
+          scroll memory would need a ScrollView per body. */}
       <Screen padBottom={TAB_BAR}>
-        {on === 'fridge' && <FridgeBody />}
-        {on === 'shopping' && <ShoppingBody />}
-        {on === 'stock' && <StockBody onShopping={() => show('shopping')} />}
+        <View style={{ display: on === 'fridge' ? 'flex' : 'none', gap: 16 }}>
+          <FridgeBody />
+        </View>
+        <View style={{ display: on === 'shopping' ? 'flex' : 'none', gap: 16 }}>
+          <ShoppingBody />
+        </View>
+        <View style={{ display: on === 'stock' ? 'flex' : 'none', gap: 16 }}>
+          <StockBody onShopping={() => show('shopping')} />
+        </View>
       </Screen>
     </View>
   );

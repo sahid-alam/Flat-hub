@@ -1,8 +1,8 @@
 // Spending: where the flat's money went, read-only. Every figure comes from src/domain/stats.ts,
 // which reads the same rows as the month statement through kitty.ts's monthBreakdown — so the
 // numbers here and on /statement/[month] cannot drift. Nothing on this screen writes.
-import { Stack, router } from 'expo-router';
-import { Fragment, useState } from 'react';
+import { Stack, router, useFocusEffect } from 'expo-router';
+import { Fragment, useCallback, useState } from 'react';
 import { View } from 'react-native';
 
 import { closableMonths, istDate } from '@/domain/kitty';
@@ -25,9 +25,11 @@ import { CloseMonth } from '@/app/statement';
 import { monthName, monthRows, statusFor } from '@/ui/statement';
 import { CategoryBars, MonthBars, SplitBar, WhoPaid } from '@/ui/stats';
 
+// Short labels so all four fit one 390pt row: wrapped onto two ragged lines they read as an
+// overflow, not as a control. "Spent in October" under them says what "This" means.
 const PERIODS: { value: Period; label: string }[] = [
-  { value: 'this', label: 'This month' },
-  { value: 'last', label: 'Last month' },
+  { value: 'this', label: 'This' },
+  { value: 'last', label: 'Last' },
   { value: '3m', label: '3 months' },
   { value: 'all', label: 'All' },
 ];
@@ -38,6 +40,16 @@ export default function Spending() {
   const [period, setPeriod] = useState<Period>('this');
   const nowIso = new Date().toISOString();
 
+  // Tabs stay mounted and nothing refetches on its own, so without this a tab left open shows
+  // stale rows: a duty another mate already marked Done still reads open, and tapping Done again
+  // appends a second chore_event that insertOnce cannot dedupe across devices.
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
+
+
   const { months, chartMonths } = spendingWindow(period, nowIso, spends);
   const total = periodTotal(spends, months);
   const series = monthSeries(spends, chartMonths);
@@ -46,7 +58,9 @@ export default function Spending() {
   const paid = perMate(spends, members.map((m) => m.id), months);
   const biggest = biggestSpends(spends, months, 5);
   const n = livePeriodSpends(spends, months).length;
-  const avg = Math.round(series.reduce((a, m) => a + m.paise, 0) / Math.max(1, series.length));
+  // rounded to the rupee, as Hero prints the total: a paise-exact average beside a rounded
+  // total looks like a different kind of number.
+  const avg = Math.round(series.reduce((a, m) => a + m.paise, 0) / Math.max(1, series.length) / 100) * 100;
   const label = periodLabel(months);
   // closes === null: the month_close table isn't there yet, so nothing can be closed
   const closable = isTreasurer && closes ? closableMonths(books, closes, nowIso)[0] : undefined;
@@ -72,10 +86,6 @@ export default function Spending() {
       <Block tone="stone">
         <SectionLabel>Spent {label}</SectionLabel>
         <Hero paise={total} />
-        <T size={15} soft>
-          {formatINR(avg)} a month on average
-          {chartMonths.length > 1 && ` · ${monthLabel(chartMonths[0])} to ${monthLabel(chartMonths[chartMonths.length - 1])}`}
-        </T>
         <T size={15}>
           {total === 0
             ? 'Nothing logged yet'
@@ -85,6 +95,13 @@ export default function Spending() {
 
       <Block>
         <MonthBars series={series} selected={new Set(months)} />
+        {/* The average is over the bars you can see, never over the selected period — inside the
+            hero it read as a second total for the same month and contradicted it. */}
+        {series.length > 1 && (
+          <T size={15} soft>
+            {formatINR(avg)} a month on average over these {series.length} months
+          </T>
+        )}
       </Block>
 
       {total === 0 ? (

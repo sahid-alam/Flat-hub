@@ -1,8 +1,8 @@
 // Whose turn it is, and where everyone stands. Every action appends one chore_event; nothing here
 // ever updates or deletes a row — Undo writes a reversal. A skip earns no credit — see
 // docs/DATA_MODEL.md ("Duties").
-import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { away, rota, standing } from '@/domain/duties';
@@ -31,6 +31,15 @@ export default function Duties() {
   // One id per pending action, kept until a reload confirms it: a retry after a lost response hits
   // insertOnce's 23505 path instead of appending a second event and paying the points twice.
   const pending = useRef(new Map<string, string>());
+
+  // Tabs stay mounted and nothing refetches on its own, so without this a tab left open shows
+  // stale rows: a duty another mate already marked Done still reads open, and tapping Done again
+  // appends a second chore_event that insertOnce cannot dedupe across devices.
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   const now = today();
   // From two days back, so an instance nobody recorded on the day doesn't become unrecordable.

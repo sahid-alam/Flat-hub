@@ -31,6 +31,7 @@ function Routes() {
         headerTintColor: c.ink,
         headerTitleStyle: { fontFamily: UI['700'], fontSize: 17 },
         headerBackButtonDisplayMode: 'minimal',
+        headerLeft: Back, // every pushed screen, not just duties/manage: see Back below
         contentStyle: { backgroundColor: c.ground },
       }}>
       <Stack.Protected guard={!session}>
@@ -54,15 +55,17 @@ function Routes() {
         <Stack.Screen name="fridge" options={{ headerShown: false }} />
         <Stack.Screen name="shopping" options={{ headerShown: false }} />
         {/* /fridge /shopping /stock are Redirects into the Kitchen tab: no header on the way through. */}
-        <Stack.Screen name="duties/manage" options={{ title: 'Manage duties', headerLeft: Back }} />
+        <Stack.Screen name="duties/manage" options={{ title: 'Manage duties' }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Import Zepto order' }} />
       </Stack.Protected>
     </Stack>
   );
 }
 
-/** The web build is deep-linkable: /duties/manage opened cold has no history and sits outside the tab
- *  bar, so without this there is no way back to the Kitty. */
+/** The web build is deep-linkable, and every screen outside `(tabs)` sits outside the tab bar: a
+ *  statement link pasted into the flat's WhatsApp group, opened cold from a Home Screen install,
+ *  has no history, no tab bar and no browser chrome — without this there is no way back to the
+ *  Kitty. It is the whole Stack's headerLeft, so one cold deep link can never strand anyone. */
 function Back() {
   return (
     <Pressable

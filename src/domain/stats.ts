@@ -2,7 +2,7 @@
 // rows the kitty maths reads, so every number here must agree with the month statement.
 // Months are IST 'YYYY-MM' strings throughout.
 
-import { anchors, istDate, monthBreakdown, pcts, type Books, type Spend } from './kitty.ts';
+import { SOURCES, anchors, istDate, monthBreakdown, pcts, type Books, type Spend } from './kitty.ts';
 
 export type Period = 'this' | 'last' | '3m' | 'all';
 
@@ -85,19 +85,30 @@ export function biggestSpends<S extends Spend>(spends: S[], months: string[], n:
  */
 export function periodBreakdown(b: Books, months: string[]) {
   const parts = months.map((month) => monthBreakdown(b, month));
-  const merge = <K extends string>(rows: ({ paise: number } & Record<K, string>)[], key: K) => {
+  // `order` matters, not just for reading: pcts()'s largest-remainder rule hands a tied leftover
+  // percent to the lower index, so the sources must be laid out in monthBreakdown's fixed SOURCES
+  // order or one month on Spending disagrees with the same month's statement.
+  const merge = <K extends string>(
+    rows: ({ paise: number } & Record<K, string>)[],
+    key: K,
+    order: (x: { paise: number } & Record<K, string>, y: { paise: number } & Record<K, string>) => number,
+  ) => {
     const by = new Map<string, number>();
     for (const r of rows) by.set(r[key], (by.get(r[key]) ?? 0) + r.paise);
     return pcts(
       [...by]
         .map(([k, paise]) => ({ [key]: k, paise }) as { paise: number } & Record<K, string>)
         .filter((g) => g.paise !== 0)
-        .sort((x, y) => y.paise - x.paise),
+        .sort(order),
     );
   };
   return {
-    byCategory: merge(parts.flatMap((p) => p.byCategory), 'category'),
-    bySource: merge(parts.flatMap((p) => p.bySource), 'source'),
+    byCategory: merge(parts.flatMap((p) => p.byCategory), 'category', (x, y) => y.paise - x.paise),
+    bySource: merge(
+      parts.flatMap((p) => p.bySource),
+      'source',
+      (x, y) => SOURCES.indexOf(x.source as (typeof SOURCES)[number]) - SOURCES.indexOf(y.source as (typeof SOURCES)[number]),
+    ),
     fromPool: sum(parts.map((p) => p.fromPool)),
     ownPocket: sum(parts.map((p) => p.ownPocket)),
     total: sum(parts.map((p) => p.total)),

@@ -51,19 +51,24 @@ export function WarnChip({ label }: { label: string }) {
   );
 }
 
-/** One of the three per-lot actions: an outlined 48pt pill that shares its row. */
+/** One of the three per-lot actions: a 48pt pill that shares its row. `tone` is the sheet's
+ *  hierarchy — 'brass' is the expected action (one per sheet), 'negative' the clay-bordered loss. */
 export function ActionButton({
   label,
   accessibilityLabel,
   disabled,
   onPress,
+  tone,
 }: {
   label: string;
   accessibilityLabel: string;
   disabled?: boolean;
   onPress: () => void;
+  tone?: 'brass' | 'negative';
 }) {
   const c = usePalette();
+  const edge = tone === 'brass' ? c.accent : tone === 'negative' ? c.negative : c.line;
+  const fg = tone === 'brass' ? c.onAccent : tone === 'negative' ? c.negative : c.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -77,7 +82,8 @@ export function ActionButton({
           minHeight: 48,
           borderRadius: 9999,
           borderWidth: 1.5,
-          borderColor: disabled ? c.hair : c.line,
+          borderColor: disabled ? c.hair : edge,
+          backgroundColor: tone === 'brass' && !disabled ? c.accent : 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
           paddingHorizontal: 4,
@@ -86,7 +92,7 @@ export function ActionButton({
       ]}>
       {/* react-native-web ignores adjustsFontSizeToFit, so the longest label ("Threw away") is
           fitted by type size and padding rather than by shrinking at runtime. */}
-      <T size={14} weight="700" numberOfLines={1} color={disabled ? c.muted : c.ink}>
+      <T size={14} weight="700" numberOfLines={1} color={disabled ? c.muted : fg}>
         {label}
       </T>
     </Pressable>

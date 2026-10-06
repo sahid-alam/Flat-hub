@@ -61,10 +61,11 @@ export function MonthBars({ series, selected }: { series: { month: string; paise
   );
 }
 
-/** Name · amount · proportional bar · integer percent. The widest row sets the full bar. */
+/** Name · amount · bar · integer percent. The bar IS the percent — it used to be scaled to the
+ *  biggest row, so a 38% category filled the whole track and told a different story to the number
+ *  printed beside it. The empty remainder of the track reads as the rest of the money. */
 export function CategoryBars({ rows }: { rows: { label: string; paise: number; pct: number }[] }) {
   const c = usePalette();
-  const widest = Math.max(...rows.map((r) => r.paise), 1);
   return (
     <View style={{ gap: 14 }} role="list">
       {rows.map((r) => (
@@ -91,7 +92,7 @@ export function CategoryBars({ rows }: { rows: { label: string; paise: number; p
                 height: 6,
                 borderRadius: 3,
                 backgroundColor: c.ink,
-                width: `${Math.max(1, Math.round((r.paise / widest) * 100))}%`,
+                width: `${Math.max(1, r.pct)}%`,
               }}
             />
           </View>

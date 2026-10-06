@@ -13,7 +13,7 @@ import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
 import { dayLabel } from '@/lib/util';
 import { WarnNote } from '@/ui/capture';
-import { Block, Chip, ErrorText, Rule, T, usePalette } from '@/ui/kit';
+import { Block, Chip, ErrorText, Icon, Rule, T, usePalette } from '@/ui/kit';
 import { ActionButton, GroupHead, SOON, WarnChip, daysLabel, fmtQty, useStock, type LotRow, type MoveRow, type StockProductRow } from '@/ui/stock';
 
 const URGENT = 0; // expired or due today: pulled to the top of the list
@@ -113,7 +113,6 @@ export function FridgeBody() {
                   days={daysLeft(lot.expiry_date, now)}
                   stale={stale.has(lot.id)}
                   busy={busy === lot.id}
-                  onAction={record}
                   onOpen={markOpened}
                   onDetail={() => setDetail(lot.id)}
                 />
@@ -153,7 +152,6 @@ function LotCard({
   days,
   stale,
   busy,
-  onAction,
   onOpen,
   onDetail,
 }: {
@@ -163,7 +161,6 @@ function LotCard({
   days: number | null;
   stale: boolean;
   busy: boolean;
-  onAction: Act;
   onOpen: (lot: LotRow) => void;
   onDetail: () => void;
 }) {
@@ -186,6 +183,9 @@ function LotCard({
         <T size={17} num>
           {left} left
         </T>
+        {/* the disclosure every other navigable row in the app has: without it nobody guesses that
+            tapping "Milk" leads anywhere, and the three actions now live only in the sheet */}
+        <Icon name={{ ios: 'chevron.right', android: 'chevron_right' }} size={18} color={c.muted} />
       </Pressable>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
         {days !== null && lot.expiry_date !== null ? (
@@ -223,18 +223,19 @@ function LotCard({
           <T size={13} weight="600" color={c.warnFg}>{`This unopened pack expires before the opened ${name.toLowerCase()} — finish this one first.`}</T>
         </WarnNote>
       )}
-      <Actions what={what} busy={busy} lot={lot} onAction={onAction} />
     </View>
   );
 }
 
-/** Finished · Half left · Threw away — the only three things a lot can be told, card or sheet. */
+/** Finished · Half left · Threw away — the only three things a lot can be told, and only from the
+ *  sheet: on every list row they made each lot ~250pt tall, so three and a half lots filled a phone.
+ *  Finished is the sheet's one accent; Threw away wears clay, because it records a loss. */
 function Actions({ lot, what, busy, onAction }: { lot: LotRow; what: string; busy: boolean; onAction: Act }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8 }}>
-      <ActionButton label="Finished" accessibilityLabel={`${what} · mark finished`} disabled={busy} onPress={() => onAction(lot, 'consume', 1)} />
+      <ActionButton tone="brass" label="Finished" accessibilityLabel={`${what} · mark finished`} disabled={busy} onPress={() => onAction(lot, 'consume', 1)} />
       <ActionButton label="Half left" accessibilityLabel={`${what} · mark half left`} disabled={busy} onPress={() => onAction(lot, 'consume', 0.5)} />
-      <ActionButton label="Threw away" accessibilityLabel={`${what} · threw away`} disabled={busy} onPress={() => onAction(lot, 'discard', 1)} />
+      <ActionButton tone="negative" label="Threw away" accessibilityLabel={`${what} · threw away`} disabled={busy} onPress={() => onAction(lot, 'discard', 1)} />
     </View>
   );
 }
@@ -320,8 +321,7 @@ function LotDetail({
             </Block>
             <Actions what={what} busy={busy} lot={lot} onAction={onAction} />
             <T size={13} soft>
-              Every action here appends a move to the ledger; a mistake is corrected with the opposite action, never
-              by editing this lot.
+              A mistake is corrected with the opposite action.
             </T>
           </ScrollView>
           <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.hair }}>

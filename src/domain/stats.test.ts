@@ -162,6 +162,14 @@ test('period breakdown: categories merge across months and the percentages still
   assert.equal(got.ownPocket, 0);
   // a single month must read exactly as the month statement does
   assert.deepEqual(periodBreakdown(b, ['2026-09']), monthBreakdown(b, '2026-09'));
+  // ...including when local is the bigger source: the percentages come out of a largest-remainder
+  // rule that breaks ties by position, so re-sorting the sources by size changed the integers and
+  // Spending and the statement printed two different Zepto shares for the same month.
+  const lopsided = books([
+    { ...spend('z', 300_000, '2026-09-04T06:00:00Z'), source: 'zepto' as const },
+    { ...spend('l', 500_000, '2026-09-05T06:00:00Z'), source: 'local' as const },
+  ]);
+  assert.deepEqual(periodBreakdown(lopsided, ['2026-09']).bySource, monthBreakdown(lopsided, '2026-09').bySource);
   // empty period
   assert.deepEqual(periodBreakdown(books([]), ['2026-07']), {
     byCategory: [],

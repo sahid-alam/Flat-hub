@@ -5,7 +5,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { poolCash, position, suggestedTopup } from '@/domain/kitty';
 import { formatINR, parseRupees, upiAmount } from '@/domain/money';
@@ -60,7 +59,8 @@ export default function KittyHome() {
   const heroWidth = Math.min(width, 560) - 32 - 42;
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.ground }}>
+    // the tab navigator's sceneStyle pads the top inset for every tab, so no SafeAreaView here
+    <View style={{ flex: 1, backgroundColor: c.ground }}>
       <Screen padBottom={TAB_BAR}>
         <View style={styles.header}>
           <Logo />
@@ -162,7 +162,7 @@ export default function KittyHome() {
           )}
         </Block>
       </Screen>
-    </SafeAreaView>
+    </View>
   );
 }
 

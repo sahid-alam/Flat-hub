@@ -185,7 +185,10 @@ export function pcts<T extends { paise: number }>(groups: T[]): (T & { pct: numb
   return groups.map((g, i) => ({ ...g, pct: share[String(i)] ?? 0 }));
 }
 
-const SOURCES: NonNullable<Spend['source']>[] = ['zepto', 'local', 'other'];
+/** The fixed order both monthBreakdown and stats.ts's periodBreakdown lay the sources out in: the
+ *  largest-remainder rule in allocate() breaks a tie by position, so a different order is a
+ *  different percentage, not just a different row order. */
+export const SOURCES: NonNullable<Spend['source']>[] = ['zepto', 'local', 'other'];
 
 /**
  * Where a month's money went: by store source and by product category, plus pool vs own pocket.

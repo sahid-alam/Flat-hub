@@ -34,7 +34,11 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false, // every tab screen draws its own pinned header
-        sceneStyle: { backgroundColor: c.ground },
+        // Every tab draws its own pinned header instead of a nav header, so the top inset has to
+        // come from here: public/index.html ships viewport-fit=cover, so on a notched iPhone in
+        // Home Screen mode the document starts under the status bar and the titles sat behind the
+        // clock. (Invisible in a desktop browser, where every inset is 0.)
+        sceneStyle: { backgroundColor: c.ground, paddingTop: insets.top },
         tabBarLabelPosition: 'below-icon', // react-navigation flips to beside-icon on wide web viewports
         tabBarActiveTintColor: c.accentText,
         tabBarInactiveTintColor: c.muted,
@@ -94,7 +98,8 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="spending"
-        options={tab('Spending', { ios: 'chart.bar', android: 'bar_chart' }, 'Spending — where the money went')}
+        // a stroke glyph, like the other four: filled `bar_chart` read as permanently selected.
+        options={tab('Spending', { ios: 'chart.line.uptrend.xyaxis', android: 'show_chart' }, 'Spending — where the money went')}
       />
     </Tabs>
   );
