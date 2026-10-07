@@ -68,7 +68,7 @@ including the gas cylinder and water cans.
 One action that takes a screenshot or a photo — he is right that these were two buttons doing one job.
 Then widen the `source` enum beyond `'zepto'` (one `CHECK` at `kitty.sql:51` plus ~10 files); the
 extractor's prompt already names Blinkit and Instamart, so **Blinkit, Instamart and BigBasket import
-ships in an afternoon for ₹0** (`IMPORT_OPTIONS.md` §8).
+ships in an afternoon for ₹0** (`IMPORT_OPTIONS.md` §6, item 1).
 Plus the per-line **"this one's mine"** toggle for the 11pm case where a mate's own chips ride on the
 flat's bill (`AUDIT.md` M1).
 
@@ -79,8 +79,22 @@ opening the app works, adding to a cart does not.
 
 ### V3.7 — Duties
 The date strip from ref-1. The **inert tick** — someone else's turn shows a muted ring and "Adnan's
-turn", never a tap that gets rejected. **Swipe** for Skip and Swap, with buttons kept as a second route.
-Co-assignment for 2–3 people. Rota reordering behind an explicit Edit, or it fights the swipe. A real
+turn", never a tap that gets rejected.
+
+**Skip is removed.** A skip and a no-show already produced identical output from the fairness engine —
+`skipped` only ever meant "excluded from `donePoints`" — so Skip bought nothing while making "formally
+decline a chore" a one-tap action. A duty past its due date with no Done is now **missed**, computed
+from the schedule rather than appended to the ledger. Old skip rows stay valid; we stop writing new
+ones. The CLAUDE.md line "A skip is its own outcome and earns no credit" needs the owner's go-ahead to
+change, and the test keeps its assertion under a new name.
+
+**Swap becomes offer → claim**, because with Skip gone a unilateral swap would be a "dump it on Ayan"
+button — worse than what we removed. The assignee offers; any mate taps Take it; nobody takes it by the
+due date and it is missed like any other. **Swipe** reveals Offer, with the button kept as a second
+route — a swipe is never the only way to reach an action.
+
+Co-assignment for 2–3 people. Rota reordering behind an explicit Edit, or it fights the swipe — and not
+to be confused with swapping an instance: "I can't do Monday because of college" is reordering. A real
 Add form. Swap must work on a future duty, not just today's.
 
 ### V3.8 — Spending, and the stat vocabulary
@@ -126,9 +140,8 @@ promised to anyone until both are settled.
 
 ## Open questions
 
-1. **"the Escape option should also show Suraj for that day."** Read as Skip, but there is no Suraj
-   among the six. What should Skip show?
-2. **The basket list and prices** — blocks V3.4, the cheapest real win on the audit.
-3. **The palette** — four directions are drawn; none chosen. Blocks V3.1.
-4. **Nav destinations.** V3 adds Home and Profile to a bar built for five. Both candidate answers are
+1. **The basket list and prices** — blocks V3.4, the cheapest real win on the audit.
+2. **The palette.** None of the four landed; Paper was closest, and what it lacked was warmth. The
+   concept is drawn in a ref-4-derived warm palette — Paper's bones, ref-4's colour. Blocks V3.1.
+3. **Nav destinations.** V3 adds Home and Profile to a bar built for five. Both candidate answers are
    drawn in the concept for him to pick.
