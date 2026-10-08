@@ -105,6 +105,26 @@ export function shoppingList(
   return [...manualRows, ...lowRows];
 }
 
+export type BaseUnit = 'g' | 'ml' | 'pc';
+
+/** Nobody says "keep at least 2000 g of atta". g/ml are stored; kg/L/pc are what a mate types. */
+export const minUnit = (base: BaseUnit): 'kg' | 'L' | 'pc' => (base === 'g' ? 'kg' : base === 'ml' ? 'L' : 'pc');
+
+/** "2" kg → 2000 g. null when it isn't a minimum: blank, zero, negative, or not a number. */
+export function parseMinQty(text: string, base: BaseUnit): number | null {
+  const t = text.replace(/[\s,]/g, '');
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const qty = round3(Number(t) * (base === 'pc' ? 1 : 1000));
+  // pieces are counted, not measured: "half a tray of eggs" is not a minimum anyone can act on
+  if (base === 'pc' && !Number.isInteger(qty)) return null;
+  return qty > 0 && Number.isFinite(qty) ? qty : null;
+}
+
+/** The inverse, for the editor's field: 2000 g → "2". null — no minimum — is an empty field. */
+export function showMinQty(qty: number | null, base: BaseUnit): string {
+  return qty === null ? '' : String(+(base === 'pc' ? qty : qty / 1000).toFixed(3));
+}
+
 /**
  * What this product was last put away as, in base units — the sum of the positive moves on its
  * newest lot. A manual spend line carries no unit ("milk, 1"), so without this the sheet would

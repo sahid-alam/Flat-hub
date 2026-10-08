@@ -1,13 +1,25 @@
+// The flat's catalogue. Every product's metadata is typed here: the category Spending groups by,
+// the minimum that puts it on the shopping list, what it is counted in, and whether it is counted
+// at all. Before B6 this screen wrote five columns and the other four had no writer anywhere
+// (docs/AUDIT.md section 0).
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { formatINR, parseRupees, upiAmount } from '@/domain/money';
+import { formatINR } from '@/domain/money';
+import { minUnit, showMinQty } from '@/domain/stock';
 import { useHousehold, type ProductRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
-import { Block, Choice, ErrorText, Field, MagnetButton, Row, Rule, Screen, SectionLabel, StarToggle, T } from '@/ui/kit';
+import { Block, ErrorText, MagnetButton, Row, Rule, Screen, SectionLabel, StarToggle, T } from '@/ui/kit';
+import { blankDraft, draftColumns, draftOf, draftOk, ProductFields, type ProductDraft } from '@/ui/product';
 
-const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
+/** What the row says about a product without opening it: price, category, and the minimum. */
+function summary(p: ProductRow): string {
+  const bits = [p.default_price_paise ? formatINR(p.default_price_paise) : 'no price', p.category ?? 'Other'];
+  if (p.min_qty !== null) bits.push(`keep ${showMinQty(p.min_qty, p.base_unit)} ${minUnit(p.base_unit)}`);
+  if (!p.track_stock) bits.push('not counted');
+  return bits.join(' · ');
+}
 
 export default function Favourites() {
   const { products, household, reload } = useHousehold();
@@ -35,20 +47,12 @@ export default function Favourites() {
             <View key={p.id} style={{ gap: 12 }}>
               {i > 0 && <Rule />}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <StarToggle
-                  on={p.favourite}
-                  label={`${p.name} in quick add`}
-                  onPress={() => setFavourite(p, !p.favourite)}
-                />
+                <StarToggle on={p.favourite} label={`${p.name} in quick add`} onPress={() => setFavourite(p, !p.favourite)} />
                 <View style={{ flex: 1 }}>
-                  <Row
-                    label={p.name}
-                    detail={p.default_price_paise ? formatINR(p.default_price_paise) : 'no price'}
-                    onPress={() => setEditing(editing === p.id ? null : p.id)}
-                  />
+                  <Row label={p.name} detail={summary(p)} onPress={() => setEditing(editing === p.id ? null : p.id)} />
                 </View>
               </View>
-              {editing === p.id && <EditPrice key={p.id} product={p} onDone={() => setEditing(null)} />}
+              {editing === p.id && <EditProduct key={p.id} product={p} onDone={() => setEditing(null)} />}
             </View>
           ))}
         </Block>
@@ -57,38 +61,29 @@ export default function Favourites() {
   );
 }
 
-function EditPrice({ product, onDone }: { product: ProductRow; onDone: () => void }) {
-  const { reload } = useHousehold();
-  const [text, setText] = useState(rupees(product.default_price_paise));
+function EditProduct({ product, onDone }: { product: ProductRow; onDone: () => void }) {
+  const { reload, lots } = useHousehold();
+  const [draft, setDraft] = useState<ProductDraft>(() => draftOf(product));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const paise = parseRupees(text);
-  const blank = !text.trim();
+  // Lots are counted in the base unit and stock_move carries no unit of its own, so the unit is
+  // only a choice until the first lot exists. After that, changing it would reread history.
+  const hasStock = lots.some((l) => l.product_id === product.id);
 
   return (
-    <View style={{ gap: 12 }}>
-      <Field
-        label="Usual price (₹)"
-        value={text}
-        onChangeText={setText}
-        keyboardType="decimal-pad"
-        placeholder="none"
-        autoFocus
-      />
+    <View style={{ gap: 14 }}>
+      <ProductFields draft={draft} onChange={setDraft} lockUnit={hasStock} />
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : 'Save price'}
+        label={busy ? 'Saving…' : 'Save'}
         outline
-        disabled={busy || (!blank && !paise)}
+        disabled={busy || !draftOk(draft)}
         onPress={async () => {
           setBusy(true);
           setError(null);
-          const { error } = await supabase
-            .from('product')
-            .update({ default_price_paise: blank ? null : paise })
-            .eq('id', product.id);
+          const { error } = await supabase.from('product').update(draftColumns(draft)).eq('id', product.id);
           setBusy(false);
-          if (error) return setError(error.message);
+          if (error) return setError(error.code === '23505' ? 'Another product already has that name.' : error.message);
           await reload();
           onDone();
         }}
@@ -98,66 +93,45 @@ function EditPrice({ product, onDone }: { product: ProductRow; onDone: () => voi
 }
 
 function AddProduct({ householdId, names, onAdded }: { householdId: string; names: string[]; onAdded: () => Promise<void> }) {
-  const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [favourite, setFavourite] = useState<'yes' | 'no'>('yes');
+  const [draft, setDraft] = useState<ProductDraft>(blankDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [id, setId] = useState(newId); // one id per product: a retried save is a no-op
 
-  const trimmed = name.trim().replace(/\s+/g, ' ');
-  const paise = parseRupees(price);
-  const priceOk = !price.trim() || paise !== null;
-  const dup = names.includes(trimmed.toLowerCase());
+  const cols = draftColumns(draft);
+  const dup = names.includes(cols.name.toLowerCase());
 
   async function add() {
     setBusy(true);
     setError(null);
-    const { error } = await supabase.from('product').insert({
-      id,
-      household_id: householdId,
-      name: trimmed,
-      default_price_paise: price.trim() ? paise : null,
-      favourite: favourite === 'yes',
-    });
+    const { error } = await supabase.from('product').insert({ id, household_id: householdId, ...cols });
     // An error after our row landed (lost response, then a 23505 on the retry) is a success.
     if (error && !(await landed('product', id))) {
       setBusy(false);
       await onAdded();
-      return setError(error.code === '23505' ? `${trimmed} is already on the list.` : error.message);
+      return setError(error.code === '23505' ? `${cols.name} is already on the list.` : error.message);
     }
     setBusy(false);
     await onAdded();
-    setName('');
-    setPrice('');
+    setDraft(blankDraft());
     setId(newId());
   }
 
   return (
     <Block>
       <SectionLabel>Add a product</SectionLabel>
-      <Field label="Name" value={name} onChangeText={setName} placeholder="Amul Taaza 500 ml" maxLength={80} />
-      <Field label="Usual price (₹, optional)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholder="29" />
-      <View style={{ gap: 8 }}>
-        <T size={15} weight="600" soft>
-          Show in quick add
+      <ProductFields draft={draft} onChange={setDraft} />
+      {dup && (
+        <T size={15} soft>
+          {cols.name} is already on the list.
         </T>
-        <Choice
-          value={favourite}
-          onChange={setFavourite}
-          options={[
-            { value: 'yes', label: 'Yes' },
-            { value: 'no', label: 'No' },
-          ]}
-        />
-      </View>
-      {dup && <T size={15} soft>{trimmed} is already on the list.</T>}
+      )}
       <ErrorText error={error} />
       <MagnetButton
         label={busy ? 'Adding…' : 'Add'}
         color="brass"
         icon={{ ios: 'plus', android: 'add' }}
-        disabled={busy || !trimmed || !priceOk || dup}
+        disabled={busy || !draftOk(draft) || dup}
         onPress={add}
       />
     </Block>

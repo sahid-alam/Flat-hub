@@ -17,6 +17,7 @@ import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, sayError, today } from '@/lib/util';
 import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
 import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
+import { blankDraft, draftColumns, draftOk, ProductFields, type ProductDraft } from '@/ui/product';
 import { usePutAway } from '@/ui/putaway';
 
 type Kind = 'item' | 'fee' | 'discount';
@@ -396,9 +397,10 @@ export default function ImportOrder() {
                     </Pressable>
                   </View>
                 ) : (
-                  <T size={15} soft>
-                    New product: pick or create
-                  </T>
+                  <PickOrCreate
+                    lineName={l.name}
+                    onPicked={(product_id) => update(i, { product_id, confirmed: true })}
+                  />
                 ))}
             </View>
           );
@@ -481,5 +483,87 @@ export default function ImportOrder() {
       <MagnetButton label="Start over" outline disabled={busy} onPress={() => setDraft(null)} />
       {putAway.sheet}
     </Screen>
+  );
+}
+
+/**
+ * A line the matcher could not place. Until B6 this printed "New product: pick or create" with
+ * neither a picker nor a button (docs/AUDIT.md section 0), so the line saved with product_id null
+ * and became no lot and no category. Now: the near-misses as chips, and a full create underneath.
+ *
+ * The product is inserted the moment Create is pressed, not at save time — spend_line.product_id
+ * is an FK, so the row has to exist before add_spend runs.
+ */
+function PickOrCreate({ lineName, onPicked }: { lineName: string; onPicked: (id: string) => void }) {
+  const { products, household, reload } = useHousehold();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<ProductDraft>(() => ({ ...blankDraft(lineName), favourite: false }));
+  const [id, setId] = useState(newId); // one id per card: a retried create is a no-op
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Near-misses, by shared word: "Amul Taaza Milk 500ml" offers "Amul Taaza milk". Three at most —
+  // this sits inside a line of a bill, not on a screen of its own.
+  const words = (s: string) => normalizeName(s).split(/\s+/).filter((w) => w.length > 2);
+  const mine = words(lineName);
+  const near = products.filter((p) => words(p.name).some((w) => mine.includes(w))).slice(0, 3);
+
+  const cols = draftColumns(draft);
+  const dup = products.some((p) => p.name.toLowerCase() === cols.name.toLowerCase());
+
+  async function create() {
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.from('product').insert({ id, household_id: household.id, ...cols });
+    if (error && !(await landed('product', id))) {
+      setBusy(false);
+      return setError(error.code === '23505' ? `${cols.name} is already on the list.` : error.message);
+    }
+    await reload();
+    setBusy(false);
+    setId(newId());
+    setOpen(false);
+    onPicked(id);
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      <T size={15} soft>
+        Nothing on the list matches this.
+      </T>
+      {near.length > 0 && !open && (
+        <Choice
+          label="Is it one of these?"
+          value=""
+          onChange={(productId) => onPicked(productId)}
+          options={near.map((p) => ({ value: p.id, label: p.name }))}
+        />
+      )}
+      {open ? (
+        <View style={{ gap: 12 }}>
+          <ProductFields draft={draft} onChange={setDraft} />
+          {dup && (
+            <T size={15} soft>
+              {cols.name} is already on the list — pick it above instead.
+            </T>
+          )}
+          <ErrorText error={error} />
+          <MagnetButton
+            label={busy ? 'Creating…' : `Create ${cols.name || 'product'}`}
+            outline
+            disabled={busy || !draftOk(draft) || dup}
+            onPress={create}
+          />
+          <MagnetButton label="Cancel" outline disabled={busy} onPress={() => setOpen(false)} />
+        </View>
+      ) : (
+        <MagnetButton
+          label="New product"
+          outline
+          icon={{ ios: 'plus', android: 'add' }}
+          onPress={() => setOpen(true)}
+        />
+      )}
+    </View>
   );
 }

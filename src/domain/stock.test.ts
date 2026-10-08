@@ -10,6 +10,9 @@ import {
   expiringSoon,
   daysLeft,
   toBase,
+  minUnit,
+  parseMinQty,
+  showMinQty,
   shoppingList,
   type Lot,
   type Move,
@@ -114,6 +117,40 @@ test('shoppingList: manual first, then low stock, a product in both appears once
   ]);
   // nothing short: dahi isn't tracked, salt has no min, atta is topped up
   assert.deepEqual(shoppingList(products, lots, [mv('l1', 1000), mv('l2', 500)], []), []);
+});
+
+test('a minimum is typed in kg/L/pc and stored in the base unit', () => {
+  assert.equal(minUnit('g'), 'kg');
+  assert.equal(minUnit('ml'), 'L');
+  assert.equal(minUnit('pc'), 'pc');
+
+  // the editor's round trip: what a mate types, what the DB holds, what the field shows next time
+  assert.equal(parseMinQty('2', 'g'), 2000);
+  assert.equal(parseMinQty('1.5', 'ml'), 1500);
+  assert.equal(parseMinQty('0.4', 'g'), 400); // 400 g of dahi
+  assert.equal(parseMinQty('6', 'pc'), 6);
+  assert.equal(showMinQty(2000, 'g'), '2');
+  assert.equal(showMinQty(400, 'g'), '0.4');
+  assert.equal(showMinQty(1000, 'ml'), '1');
+  assert.equal(showMinQty(6, 'pc'), '6');
+  assert.equal(showMinQty(null, 'g'), ''); // no minimum is an empty field, never a zero
+
+  // not a minimum
+  assert.equal(parseMinQty('', 'g'), null);
+  assert.equal(parseMinQty('0', 'g'), null);
+  assert.equal(parseMinQty('-1', 'g'), null);
+  assert.equal(parseMinQty('half', 'g'), null);
+  assert.equal(parseMinQty('2.5', 'pc'), null); // half a packet is not a count
+
+  // and it is the unit the shopping list compares against: 1 kg asked for, 400 g on hand → short.
+  // This is the assertion that fails if the editor ever writes kilos into a column counting grams.
+  const products = [{ id: 'atta', name: 'Atta', track_stock: true, min_qty: parseMinQty('1', 'g') }];
+  const lots: Lot[] = [
+    { id: 'l1', product_id: 'atta', location: 'pantry', expiry_date: null, opened: true, received_at: '2026-10-01T06:00:00Z' },
+  ];
+  assert.deepEqual(shoppingList(products, lots, [{ lot_id: 'l1', delta_qty: 400 }], []), [
+    { product_id: 'atta', name: 'Atta', have: 400, min: 1000, source: 'low' },
+  ]);
 });
 
 test('lastPackSize remembers how the product was put away last time', () => {
