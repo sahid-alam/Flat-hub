@@ -160,7 +160,13 @@ async function sendOne(sub: { endpoint: string; p256dh: string; auth: string }, 
  * Apple's web push endpoint. Safari ignores showNotification's `silent` option, so there is no such
  * thing as a quiet push on an iPhone — see the comment in deliver().
  */
-const isApple = (endpoint: string): boolean => new URL(endpoint).hostname.endsWith('.push.apple.com');
+const isApple = (endpoint: string): boolean => {
+  try {
+    return new URL(endpoint).hostname.endsWith('.push.apple.com');
+  } catch {
+    return false; // a row that is not a URL cannot be posted to anyway; sendOne will say so
+  }
+};
 
 /** Deliver to every device, and reap the dead endpoints. */
 async function deliver(db: SupabaseClient, r: Recipient, pref: Pref): Promise<number> {
