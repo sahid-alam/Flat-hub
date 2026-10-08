@@ -20,7 +20,7 @@ import { dayLabel, sayError, today } from '@/lib/util';
 import { SwipeRow, cadenceLabel, useDuties } from '@/ui/duties';
 import { Block, ErrorText, Icon, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, Toast, usePalette } from '@/ui/kit';
 
-const AHEAD = 5; // today plus the next four days: an offer has to work on a duty due on Thursday
+const AHEAD = 4; // today plus the next three days: an offer has to work on a duty due on Thursday
 const BACK = 1; // yesterday, so a missed duty is stated once and then left alone
 const OFFER_ICON = { ios: 'arrow.up.circle', android: 'arrow_upward' };
 
@@ -48,7 +48,7 @@ export default function Duties() {
   );
 
   const now = today();
-  const days = rota(duties, members, absences, choreEvents, shift(now, -BACK), AHEAD + BACK, anchor);
+  const days = rota(duties, members, absences, choreEvents, shift(now, -BACK), AHEAD + BACK, anchor, now);
   const yesterday = days.filter((r) => r.date < now);
   const todays = days.filter((r) => r.date === now);
   const later = days.filter((r) => r.date > now);
@@ -61,14 +61,17 @@ export default function Duties() {
 
   const open = (r: RotaRow) => r.slots.filter((s) => !s.done);
   const openToday = todays.flatMap(open);
-  // Collapse the names: one mate's name once, not once per duty.
-  const whoToday = [...new Set(openToday.map((s) => name(s.holderId).split(' ')[0]))];
+  // Collapse the names: one mate's name once, not once per duty, and never your own name back at you.
+  const first = (id: string) => (id === me.id ? 'you' : name(id).split(' ')[0]);
+  const whoToday = [...new Set(openToday.map((s) => first(s.holderId)))];
   const digest = !todays.length
     ? 'No duties due today.'
     : !openToday.length
       ? 'All of today’s duties are done.'
       : whoToday.length === 1
-        ? `${openToday.length} ${openToday.length === 1 ? 'turn' : 'turns'} left today — all ${whoToday[0]}’s.`
+        ? whoToday[0] === 'you'
+          ? `${openToday.length} ${openToday.length === 1 ? 'turn' : 'turns'} left today, and ${openToday.length === 1 ? 'it is' : 'they are'} yours.`
+          : `${openToday.length} ${openToday.length === 1 ? 'turn' : 'turns'} left today — all ${whoToday[0]}’s.`
         : `${openToday.length} turns left today — ${list(whoToday)}.`;
 
   // Whose next open turn falls when. Words, never a ranking.
@@ -179,7 +182,9 @@ export default function Duties() {
     const who = name(slot.holderId);
     const owner = name(slot.ownerId);
     const isMissed = missed(slot, r.date, now);
-    const isOffered = offered(dutyMarks, r.duty.id, r.date, slot.ownerId) && !slot.done;
+    // Somebody took it: the offer is spent, so the row stops advertising itself.
+    const claimed = slot.holderId !== slot.ownerId;
+    const isOffered = !claimed && !slot.done && offered(dutyMarks, r.duty.id, r.date, slot.ownerId);
     const vouched = vouchers(dutyMarks, r.duty.id, r.date, slot.ownerId);
     const photos = dutyPhotos.filter(
       (p) => p.duty_id === r.duty.id && p.due_on === r.date && p.member_id === slot.ownerId,
@@ -189,7 +194,7 @@ export default function Duties() {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <T size={14} soft style={{ flex: 1 }}>
           {yours ? 'You did it' : `${who.split(' ')[0]} did it`}
-          {vouched.length > 0 && ` · vouched by ${list(vouched.map((v) => name(v).split(' ')[0]))}`}
+          {vouched.length > 0 && ` · vouched by ${list(vouched.map(first))}`}
         </T>
         {!yours && !vouched.includes(me.id) && (
           <Chip
@@ -221,7 +226,8 @@ export default function Duties() {
     ) : (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <T size={14} weight={yours ? '700' : '500'} soft={!yours} style={{ flex: 1 }}>
-          {yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
+          {claimed ? (yours ? 'Your turn now' : `${who.split(' ')[0]}’s turn now`) : yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
+          {claimed && ` · ${yours ? 'you' : who.split(' ')[0]} took it from ${owner.split(' ')[0]}`}
           {isOffered && ' · offered, waiting for somebody to take it'}
         </T>
         {yours && when !== 'future' && (
@@ -298,6 +304,41 @@ export default function Duties() {
           </Pressable>
         )}
         {toast?.card === card && <Toast message={toast.message} onUndo={toast.undo} style={{ marginTop: 2 }} />}
+      </View>
+    );
+  };
+
+  /** One line in yesterday's record. Grey, one word, no glyph, and a way to add the photo. */
+  const missedRow = (r: RotaRow, slot: Slot) => {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    const photos = dutyPhotos.filter(
+      (p) => p.duty_id === r.duty.id && p.due_on === r.date && p.member_id === slot.ownerId,
+    );
+    return (
+      <View key={card} style={{ gap: 2, paddingVertical: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <T size={15} weight="600" style={{ flex: 1 }}>
+            {r.duty.name}
+          </T>
+          <T size={14} soft>
+            {`${first(slot.holderId) === 'you' ? 'Yours' : `${first(slot.holderId)}’s`} · Missed`}
+          </T>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Add a photo to ${r.duty.name}, ${dayLabel(r.date)}`}
+          disabled={busy === `${card}:photo`}
+          onPress={() => addPhoto(r, slot)}
+          style={({ pressed }) => [{ minHeight: 36, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
+          <T size={13} weight="600" soft>
+            {busy === `${card}:photo`
+              ? 'Adding…'
+              : photos.length
+                ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} · add another`
+                : 'Add a photo'}
+          </T>
+        </Pressable>
+        {toast?.card === card && <Toast message={toast.message} onUndo={toast.undo} />}
       </View>
     );
   };
@@ -388,27 +429,31 @@ export default function Duties() {
           </Block>
         )}
 
+        {todays.map((r) => dutyBlock(r, 'today'))}
+
+        {[...new Set(later.map((r) => r.date))].map((date) => (
+          <View key={date} style={{ gap: 16 }}>
+            <SectionLabel>{dayLabel(date)}</SectionLabel>
+            {later.filter((r) => r.date === date).map((r) => dutyBlock(r, 'future'))}
+          </View>
+        ))}
+        {later.length > 0 && (
+          <T size={13} soft>
+            You can offer a turn days before it falls due — it stays open until somebody takes it.
+          </T>
+        )}
+
+        {/* Yesterday's misses are stated once, in one quiet block, BELOW today's work — not a block
+            per duty at the top of the screen, which turns a record into a wall of accusations. */}
         {yesterday.some((r) => r.slots.some((s) => missed(s, r.date, now))) && (
-          <>
+          <Block style={{ gap: 0, paddingVertical: 8 }}>
             <SectionLabel>{dayLabel(yesterday[0].date)}</SectionLabel>
-            {yesterday.filter((r) => r.slots.some((s) => missed(s, r.date, now))).map((r) => dutyBlock(r, 'past'))}
-            <T size={13} soft>
+            {yesterday.flatMap((r) => r.slots.filter((s) => missed(s, r.date, now)).map((s) => missedRow(r, s)))}
+            <T size={13} soft style={{ paddingTop: 8 }}>
               A missed duty is worked out from the schedule, never written down. It earns no credit, and nothing is
               owed for it.
             </T>
-          </>
-        )}
-
-        {todays.map((r) => dutyBlock(r, 'today'))}
-
-        {later.length > 0 && (
-          <>
-            <SectionLabel>Next few days</SectionLabel>
-            {later.map((r) => dutyBlock(r, 'future'))}
-            <T size={13} soft>
-              You can offer a turn days before it falls due — it stays open until somebody takes it.
-            </T>
-          </>
+          </Block>
         )}
 
         {mates.length > 0 && (

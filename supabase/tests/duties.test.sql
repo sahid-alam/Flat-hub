@@ -237,12 +237,18 @@ select throws_ok($$ update public.duty set group_size = 4 where id = 'aaaaaaaa-0
 -- ---------------------------------------------------------------- B4: the 2-month retention rule
 
 reset role; -- B9's scheduled job runs as postgres, not as a mate
-select is((select count(*) from private.purge_duty_photos()), 0::bigint,
-  'a photo taken today survives the purge');
-update public.duty_photo set created_at = now() - interval '3 months';
-select is((select count(*) from private.purge_duty_photos()), 1::bigint,
-  'a photo older than two months is purged, and its storage path comes back for the caller to remove');
-select is((select count(*) from public.duty_photo), 0::bigint, 'and its row is gone');
+-- The purge is global by design, so every assertion here names THIS photo's path rather than
+-- counting rows: the local stack is shared, and another flat's photos are not this test's business.
+select is((select count(*) from private.purge_duty_photos() p
+           where p = '11111111-0000-7000-8000-000000000001/duty/dddddddd-0000-7000-8000-000000000001.jpg'),
+  0::bigint, 'a photo taken today survives the purge');
+update public.duty_photo set created_at = now() - interval '3 months'
+  where household_id = '11111111-0000-7000-8000-000000000001';
+select is((select count(*) from private.purge_duty_photos() p
+           where p = '11111111-0000-7000-8000-000000000001/duty/dddddddd-0000-7000-8000-000000000001.jpg'),
+  1::bigint, 'a photo older than two months is purged, and its storage path comes back for the caller to remove');
+select is((select count(*) from public.duty_photo where household_id = '11111111-0000-7000-8000-000000000001'),
+  0::bigint, 'and its row is gone');
 set local role authenticated;
 
 -- ---------------------------------------------------------------- the outsider

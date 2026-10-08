@@ -360,6 +360,8 @@ function Day({ label, on, onPress }: { label: string; on: boolean; onPress: () =
           minHeight: 48,
           borderRadius: 24,
           borderWidth: 1.5,
+          flexDirection: 'row',
+          gap: 5,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: on ? c.raised : 'transparent',
@@ -367,6 +369,9 @@ function Day({ label, on, onPress }: { label: string; on: boolean; onPress: () =
         },
         pressed && { transform: [{ scale: 0.97 }] },
       ]}>
+      {/* kit's Choice marks the picked chip with a check; a set of toggles needs the same tell, or
+          a row where everything is on looks like a row where nothing is. */}
+      {on && <Icon name={{ ios: 'checkmark', android: 'check' }} size={15} color={c.ink} />}
       <T size={13} weight="700">
         {label}
       </T>

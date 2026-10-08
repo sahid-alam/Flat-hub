@@ -259,7 +259,10 @@ export const vouchers = (marks: DutyMark[], dutyId: string, dueOn: string, owner
 
 export type RotaRow = { date: string; duty: Duty; slots: Slot[] };
 
-/** The next `days` days of duty: date, duty, and one slot per co-assignee. */
+/**
+ * The next `days` days of duty: date, duty, and one slot per co-assignee. `today` only matters when
+ * the window reaches back before it, which the screen does so it can state yesterday's misses.
+ */
 export function rota(
   duties: Duty[],
   members: Member[],
@@ -268,6 +271,7 @@ export function rota(
   from: string,
   days: number,
   anchor: string,
+  today: string = from,
 ): RotaRow[] {
   const active = duties.filter((d) => d.active).sort(byId);
   // Every turn handed out here is credited provisionally, so the second duty due today sees the
@@ -282,7 +286,10 @@ export function rota(
       if (!isDueOn(duty, date, anchor)) continue;
       const slots = assignees(duty, date, members, absences, [...events, ...provisional], anchor, duties);
       for (const s of slots)
-        if (!s.done)
+        // A slot already past its due date with no Done is MISSED, and a missed slot gets NO
+        // provisional credit. Crediting it would push whoever missed it down the queue — credit for
+        // work nobody did, arriving through the assignment engine instead of through donePoints.
+        if (!s.done && date >= today)
           provisional.push({
             id: `~${date}|${duty.id}|${s.holderId}`,
             duty_id: duty.id,

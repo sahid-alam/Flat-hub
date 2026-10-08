@@ -395,6 +395,21 @@ test('a claim by a mate who is away does not stick', () => {
   assert.equal(one(d, '2026-10-07', abc, absences, aDid, ANCHOR, [d]), 'c');
 });
 
+test('missing a duty does not push you down the queue', () => {
+  const d = daily('d1');
+  // The screen looks a day back so it can state yesterday's misses. Nobody did Monday's bins.
+  const out = rota([d], abc, [], [], '2026-10-01', 3, ANCHOR, '2026-10-02');
+  assert.deepEqual(
+    out.map((r) => `${r.date} ${r.slots[0].holderId}`),
+    [
+      '2026-10-01 a', // missed
+      '2026-10-02 a', // still a's: the miss bought nothing, not even a place further down
+      '2026-10-03 b',
+    ],
+  );
+  // Without the guard the missed Monday would be credited provisionally and Tuesday would be b's.
+});
+
 test('ticking a duty never re-shuffles the pair that was on screen', () => {
   const pair = { ...daily('d1'), group_size: 2 };
   const before = assignees(pair, ANCHOR, six, [], [], ANCHOR, [pair]).map((s) => s.ownerId);
