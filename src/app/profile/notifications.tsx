@@ -37,17 +37,14 @@ export default function Notifications() {
   async function choose(t: Trigger, mode: Mode) {
     setError(null);
     setPending((p) => ({ ...p, [t.key]: mode }));
-    const { error } = await supabase.from('notification_pref').upsert(
-      {
-        id: newId(),
-        household_id: household.id,
-        member_id: me.id,
-        trigger: t.key,
-        mode,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'household_id,member_id,trigger' },
-    );
+    // Insert first, then update on the duplicate: only (mode, updated_at) are writable, and a
+    // PostgREST upsert would need UPDATE on the whole table, `id` included.
+    const row = { household_id: household.id, member_id: me.id, trigger: t.key };
+    const updated_at = new Date().toISOString();
+    let { error } = await supabase.from('notification_pref').insert({ id: newId(), ...row, mode, updated_at });
+    if (error?.code === '23505') {
+      ({ error } = await supabase.from('notification_pref').update({ mode, updated_at }).match(row));
+    }
     if (error) {
       setPending((p) => {
         const { [t.key]: _gone, ...rest } = p;

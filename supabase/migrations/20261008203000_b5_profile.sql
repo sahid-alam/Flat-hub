@@ -68,6 +68,9 @@ create policy notification_pref_update on public.notification_pref for update to
 
 revoke all on public.notification_pref from anon, authenticated;
 grant select, insert on public.notification_pref to authenticated;
+-- Only the choice itself is writable: a row keeps the id, member and trigger it was born with, so
+-- the client writes a change as an insert and, on 23505, an update of these two columns. (A
+-- PostgREST upsert would need table-level UPDATE, which hands over `id` as well.)
 grant update (mode, updated_at) on public.notification_pref to authenticated;
 
 -- ---------------------------------------------------------------- storage
