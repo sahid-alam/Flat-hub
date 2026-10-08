@@ -2,7 +2,7 @@
 -- and RLS. A bill is a payer with per-person shares; it never touches the kitty.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(13);
+select plan(14);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'sahid@test'),
@@ -12,10 +12,11 @@ insert into auth.users (id, email) values
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
 select public.create_household('11111111-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'Flat 4B', 'Sahid');
+-- the code has to be read while sahid is the one asking: RLS hides the household from a non-member
+create temp table invite as select invite_code from public.household where id = '11111111-0000-7000-8000-000000000001';
 -- ansh joins, so the flat has two mates and a ₹600 Wi-Fi bill splits ₹300/₹300
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
-select public.join_household('22222222-0000-7000-8000-000000000002',
-  (select invite_code from public.household where id = '11111111-0000-7000-8000-000000000001'), 'Ansh');
+select public.join_household('22222222-0000-7000-8000-000000000002', (select invite_code from invite), 'Ansh');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
 
 -- ---------------------------------------------------------------- the split must be exact

@@ -47,6 +47,9 @@ function Routes() {
         <Stack.Screen name="topup" options={{ presentation: 'modal', title: 'Record a top-up' }} />
         <Stack.Screen name="away" options={{ title: 'Away' }} />
         <Stack.Screen name="reimburse" options={{ title: 'To reimburse' }} />
+        <Stack.Screen name="bills" options={{ title: 'Bills' }} />
+        <Stack.Screen name="bills/new" options={{ presentation: 'modal', title: 'Add a bill' }} />
+        <Stack.Screen name="bills/[id]" options={{ title: 'Bill' }} />
         <Stack.Screen name="statement" options={{ title: 'Statements' }} />
         <Stack.Screen name="statement/[month]" options={{ title: 'Statement' }} />
         <Stack.Screen name="mates" options={{ title: 'Mates' }} />
