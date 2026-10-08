@@ -251,33 +251,42 @@ Everything below is step two, and each one is then a few lines in the same funct
 
 ## The full trigger table
 
-"Notifications for everything", translated into this app's actual tables. The **machine** column
-matters: a schedule and a row-event are different pieces of infrastructure.
+"Notifications for everything", translated into this app's actual tables.
 
-| # | Notification | To | Machine | Fires from |
-|---|---|---|---|---|
-| 1 | Your duty is due today | today's assignee | **cron** — 08:00 IST daily | `rota()` over `duty` + `chore_event`; no row has been written yet, so nothing can trigger |
-| 2 | Your duty is still not ticked | assignee | **cron** — 20:00 IST daily | same, filtered to instances with no `chore_event` for `due_on = today` |
-| 3 | A duty was offered — anyone can take it | all other active, non-absent members | **DB event** | INSERT on the V3 offer row (`chore_event.outcome = 'swapped'` today; V3 splits offer from claim — see [V3_PLAN.md](V3_PLAN.md) line 91. **The offer/claim tables do not exist yet**) |
-| 4 | The duty you offered has been claimed | the original assignee | **DB event** | INSERT of the claim row |
-| 5 | Nobody claimed your offer — it is due today | the original assignee | **cron** — with #1 | open offers whose `due_on = today` |
-| 6 | Someone vouched that you did it | the assignee | **DB event** | INSERT on the vouch row (**does not exist yet** — [V3_BRIEF.md](V3_BRIEF.md) line 65) |
-| 7 | Your ₹2,000 top-up is not in yet | each member with `suggested_topup(m) > 0` | **cron** — monthly, e.g. 5th 10:00 IST | derived from `pool_entry`; nothing is inserted when a mate *fails* to pay, so only a clock can notice |
-| 8 | Ansh has reimbursed you | the `member_id` on the entry | **DB event** | INSERT on `pool_entry` where `kind = 'reimbursement'` |
-| 9 | Your top-up was recorded | the contributor | **DB event** | INSERT on `pool_entry` where `kind = 'contribution'` |
-| 10 | The kitty is running low | the treasurer (`household.pool_holder_id`) | **DB event**, debounced | INSERT on `spend` → recompute `pool_cash`; send only on crossing a threshold downward, at most once a day |
-| 11 | Milk expires tomorrow | all members | **cron** — 07:00 IST daily | `lot.expiry_date = tomorrow` and the lot's `Σ stock_move.delta_qty > 0`. A date arriving is not a row event |
-| 12 | Something expired and is still in the fridge | all members | **cron** — with #11 | `lot.expiry_date < today`, on-hand `> 0` |
-| 13 | Below minimum — add to the list | all members | **DB event** | INSERT on `stock_move` with `delta_qty < 0` → on-hand now under `product.min_qty` |
-| 14 | A Zepto order was imported and needs put-away | the importer, then all members after an hour | **DB event** + **cron** chaser | INSERT on `spend` where `source = 'zepto'` with `track_stock` lines and no `lot` yet |
-| 15 | Someone added to the shopping list | all members, batched daily | **cron** — 19:00 IST | `shopping_item` rows added today with `done_at is null`. Per-row push here would be spam |
-| 16 | A spend was reversed | the payer and the treasurer | **DB event** | INSERT on `spend` or `pool_entry` with `reverses_id not null` |
-| 17 | The month is ready to close | the treasurer only | **cron** — 1st of the month, 10:00 IST | no `month_close` row for the previous month |
-| 18 | The month was closed | all members | **DB event** | INSERT on `month_close` |
-| 19 | A new mate joined the flat | all members | **DB event** | INSERT on `member` |
-| 20 | You are marked away from *date* | the absent member | **DB event** | INSERT on `member_absence` (confirms someone else logged it for you) |
-| 21 | You're on dishes today — what's for lunch and dinner? | today's assignees on the `plans_meals` duty | **conditional cron** — 10:30 IST daily | today's `assignees()` for the duty with `plans_meals = true`, **only if** no `meal_plan` row exists for `(household_id, today)`. See *Conditional crons* below. ([V3_BRIEF.md](V3_BRIEF.md) R11 / line 145 — `duty.plans_meals` and `meal_plan` **do not exist yet**) |
-| 22 | Ayan ticked the bins — your half is still open | the co-assignee who has *not* ticked | **DB event** | INSERT on `chore_event` with `outcome = 'done'` for a duty whose `group_size > 1`; notify the other members of `assignees(duty, due_on)` with no `done` row for that `due_on`. `chore_event` itself is unchanged — each co-assignee ticks their own row ([V3_BRIEF.md](V3_BRIEF.md) R2 / line 140; **`duty.group_size` and `assignees()` do not exist yet**) |
+Two columns carry the decisions. **Machine** is the infrastructure: a schedule and a row-event are
+different pieces of plumbing, and a *conditional* schedule is a different query again. **Channel**
+is whether it is allowed to buzz a phone at all — only 8 of these 22 are, for the reasons in
+*"Everything" should not all be push* above. Read the Channel column as binding: a row marked
+**in-app** must not be wired to the push sender, however easy it would be.
+
+| # | Notification | To | Channel | Machine | Fires from |
+|---|---|---|---|---|---|
+| 1 | Your duty is due today | today's assignee | **push** | **cron** — 08:00 IST daily | `rota()` over `duty` + `chore_event`; no row has been written yet, so nothing can trigger |
+| 2 | Your duty is still not ticked | assignee | **push** | **conditional cron** — 20:00 IST daily | same, filtered to instances with no `chore_event` for `due_on = today` |
+| 3 | A duty was offered — anyone can take it | all other active, non-absent members | **push, once** — the judgement call | **DB event** | INSERT on the V3 offer row (`chore_event.outcome = 'swapped'` today; V3 splits offer from claim — see [V3_PLAN.md](V3_PLAN.md) line 91. **The offer/claim tables do not exist yet**) |
+| 4 | The duty you offered has been claimed | the original assignee | **push** | **DB event** | INSERT of the claim row |
+| 5 | Nobody claimed your offer — it is due today | the original assignee | **in-app** | **conditional cron** — with #1 | open offers whose `due_on = today` |
+| 6 | Someone vouched that you did it | the assignee | **in-app** | **DB event** | INSERT on the vouch row (**does not exist yet** — [V3_BRIEF.md](V3_BRIEF.md) line 65) |
+| 7 | Your ₹2,000 top-up is not in yet | each member with `suggested_topup(m) > 0` | **push** | **conditional cron** — monthly, 5th 10:00 IST | derived from `pool_entry`; nothing is inserted when a mate *fails* to pay, so only a clock can notice |
+| 8 | Ansh has reimbursed you | the `member_id` on the entry | **push** | **DB event** | INSERT on `pool_entry` where `kind = 'reimbursement'` |
+| 9 | Your top-up was recorded | the contributor | **in-app** | **DB event** | INSERT on `pool_entry` where `kind = 'contribution'` |
+| 10 | The kitty is running low | the treasurer (`household.pool_holder_id`) | **in-app** | **DB event**, debounced | INSERT on `spend` → recompute `pool_cash`; flag only on crossing a threshold downward |
+| 11 | Milk expires tomorrow | **nobody is pushed** — shows on the fridge screen, counts toward the 19:00 digest | **in-app / digest** | **cron** — 07:00 IST daily, **computes, does not send** | `lot.expiry_date = tomorrow` and the lot's `Σ stock_move.delta_qty > 0`. A date arriving is not a row event |
+| 12 | Something expired and is still in the fridge | as #11 | **in-app / digest** | **cron** — with #11, computes only | `lot.expiry_date < today`, on-hand `> 0` |
+| 13 | Below minimum — add to the list | shows on the shopping screen | **in-app** | **DB event** | INSERT on `stock_move` with `delta_qty < 0` → on-hand now under `product.min_qty` |
+| 14 | A Zepto order was imported and needs put-away | the importer only | **in-app** | **DB event** | INSERT on `spend` where `source = 'zepto'` with `track_stock` lines and no `lot` yet. *No "then everyone after an hour" chaser — that was a broadcast and it is cut.* |
+| 15 | Someone added to the shopping list | all members, in the one 19:00 digest | **digest** | **cron** — 19:00 IST | `shopping_item` rows added today with `done_at is null`. Per-row push here would be spam |
+| 16 | A spend was reversed | the payer and the treasurer | **in-app** | **DB event** | INSERT on `spend` or `pool_entry` with `reverses_id not null` |
+| 17 | The month is ready to close | the treasurer only | **push** | **conditional cron** — 1st of the month, 10:00 IST | no `month_close` row for the previous month |
+| 18 | The month was closed | all members | **in-app** | **DB event** | INSERT on `month_close` |
+| 19 | A new mate joined the flat | all members | **in-app** | **DB event** | INSERT on `member` |
+| 20 | You are marked away from *date* | the absent member | **in-app** | **DB event** | INSERT on `member_absence` (confirms someone else logged it for you) |
+| 21 | You're on dishes today — what's for lunch and dinner? | today's assignees on the `plans_meals` duty | **push** | **conditional cron** — 10:30 IST daily | today's `assignees()` for the duty with `plans_meals = true`, **only if** no `meal_plan` row exists for `(household_id, today)`. See *Conditional crons* below. ([V3_BRIEF.md](V3_BRIEF.md) R11 / line 145 — `duty.plans_meals` and `meal_plan` **do not exist yet**) |
+| 22 | Ayan ticked the bins — your half is still open | the co-assignee who has *not* ticked | **push** | **DB event** | INSERT on `chore_event` with `outcome = 'done'` for a duty whose `group_size > 1`; notify the other members of `assignees(duty, due_on)` with no `done` row for that `due_on`. `chore_event` itself is unchanged — each co-assignee ticks their own row ([V3_BRIEF.md](V3_BRIEF.md) R2 / line 140; **`duty.group_size` and `assignees()` do not exist yet**) |
+
+**Push: 1, 2, 3, 4, 7, 8, 17, 21, 22.** That is 9 rows, because #3 is the one marked as a
+judgement call and the first to demote — 8 if you drop it. Everything else is in-app or the single
+19:00 digest.
 
 ### Conditional crons — the shape most of these actually are
 
@@ -305,16 +314,85 @@ Three rules for them, learned from the shape rather than the platform:
 
 Notes that keep this from becoming spam:
 
-- **Cron: 7 jobs, not 22.** One 07:00 daily (#11, #12), one 08:00 daily (#1, #5), one 10:30 daily
-  (#21), one 19:00 daily (#15), one 20:00 daily (#2), and two monthly — the 1st for #17 and the 5th
-  for #7, since they fall on different dates. Supabase recommends no more than 8 concurrent jobs
+- **Cron: 7 jobs, not 22 — and only 4 of them send a push.** One 07:00 daily that **computes
+  expiry counts and sends nothing** (#11, #12, feeding the in-app count and the evening digest);
+  one 08:00 daily (#1 pushes, #5 updates the count); one 10:30 daily (#21); one 19:00 daily that
+  sends the single combined digest (#15, plus whatever #11/#12 found); one 20:00 daily (#2); and
+  two monthly — the 1st for #17 and the 5th for #7, since they fall on different dates. Supabase
+  recommends no more than 8 concurrent jobs
   (<https://supabase.com/docs/guides/cron>) and this sits inside that.
 - **Never notify the actor.** Rows 8, 9, 16, 18, 19, 20 must exclude whoever wrote the row —
-  otherwise Ansh gets a push for every reimbursement he types in himself.
-- **Rows 3, 4, 6 depend on V3 schema that does not exist yet.** They are the *reason* to build the
-  mechanism now and the triggers later; do not promise dates on them.
+  otherwise Ansh gets a push for every reimbursement he types in himself. Row 22 is this rule doing
+  real work: the mate who just ticked must not be told that someone ticked.
+- **Rows 3, 4, 6, 21, 22 depend on V3 schema that does not exist yet** — offer/claim, vouch,
+  `duty.plans_meals` + `meal_plan`, and `duty.group_size` + `assignees()`. They are the *reason* to
+  build the mechanism now and the triggers later; do not promise dates on them.
 - Every notification deep-links to the screen that already shows the fact. A missed push must cost
   nothing, because on iPhone some will be missed.
+
+## "Everything" should not all be push — and this is the real risk
+
+The platform research above says notifications are achievable. This section is the part that
+actually decides whether they survive, and it is worth saying plainly rather than letting him find
+out: **the failure mode here is not technical, it is six people turning notifications off in week
+two.**
+
+A denial is expensive and hard to undo. The permission prompt may only appear "in response to
+direct user interaction" (<https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/>),
+and a browser that has already been told no does not show it again on the next tap — so **the page
+cannot re-prompt its way back**, and recovery runs through the OS or browser settings. Combined with
+the subscription loss described above, assume a mate who switches notifications off is a mate you
+have stopped reaching.
+
+> **Unverified:** the precise recovery path on iOS — which Settings screen, and whether a Home
+> Screen web app's notification permission can be re-granted without deleting and re-adding the
+> icon. I found no primary source. Do not promise him it is easy to undo; the safe assumption is
+> that it is not.
+
+The arithmetic is unforgiving. 22 triggers, and the broadcast ones go to all six. If rows 3, 9–16
+and 18–20 each push to everyone, an ordinary Tuesday is eight to twelve pushes per mate for things
+like "someone added coriander to the list". That is the exact volume that teaches people the app
+cries wolf. And it lands in a flat that **already has a WhatsApp group carrying the real chatter** —
+so FlatHub is not filling a silence, it is competing with a channel they already read. It only wins
+by being the one that is never noise: WhatsApp is where the flat talks, FlatHub is where it is
+*your turn* or *your money*.
+
+**The recommendation, plainly: 8 of the 22 should ever be push. The other 14 should be an in-app
+count and nothing more.**
+
+| Push — addressed to one person, actionable by them, time-bound | Why it earns the interrupt |
+|---|---|
+| #1 your duty is due today | the core of the app; one person, one day |
+| #2 still not ticked (20:00) | the one that actually changes behaviour |
+| #4 the duty you offered has been claimed | you were waiting on an answer |
+| #22 your half of the bins is still open | one named person, blocking a partner |
+| #21 declare lunch and dinner | one or two people, and the flat eats on it |
+| #7 your ₹2,000 top-up is not in yet | money, monthly, one person |
+| #8 Ansh has reimbursed you | money arriving, one person |
+| #17 the month is ready to close | treasurer only, monthly |
+
+Everything else — #5, #6, #9, #10, #11, #12, #13, #14, #15, #16, #18, #19, #20 — is **in-app
+only**: a count on the tab bar and the fact on the screen. Nobody needs their phone to buzz because
+a lot expired; they need to see it when they next open the fridge screen.
+
+Row **#3 ("a duty was offered — anyone can take it") is the one genuine judgement call.** It is a
+broadcast to five people, which is the spam-prone shape, but an offer nobody sees is an offer nobody
+takes, and with Skip removed that duty just gets missed. Recommendation: push it, **once**, never
+re-nudged, and treat it as the first thing to demote if anyone complains.
+
+That leaves a mate with roughly **one or two pushes on a day they are on duty, and zero on a day
+they are not.** That is a volume people keep. Three cheap things protect it:
+
+- **One digest, not a stream.** Where several in-app facts pile up, the 19:00 job sends at most one
+  combined message, never one per row.
+- **Per-trigger switches, per mate, from the second trigger onward.** With one notification shipped
+  the on/off button is the switch; the moment there are two, they need separate switches. A mate
+  who finds the 20:00 nudge naggy must be
+  able to turn off *that one* in Settings instead of revoking the whole permission at the OS level.
+  This is the single most important piece of spam insurance, because it is the only alternative to
+  the OS-level switch we may not be able to talk them back out of.
+- **Collapse by tag.** Give each trigger a stable `tag` on the notification so a second send
+  replaces the first in the tray rather than stacking.
 
 ## Honest fallbacks, in the order to reach for them
 
@@ -342,7 +420,15 @@ Notifications are achievable on both phones, for ₹0, using one mechanism. The 
 mate to add FlatHub to their Home Screen and tap a button once — which they have effectively already
 done to use the app — and the iPhone will drop its subscription occasionally, so the app re-subscribes
 every time it opens. Android is strictly easier and does not need the APK — though the OS icon badge
-is iPhone-only. "Everything" is 20 real triggers; 6 scheduled jobs and ~12 database triggers cover
-them, and several are waiting on V3 tables that do not exist yet. Nothing here needs a paid plan,
-with one thing left to confirm by hand: that the free Supabase project will let us enable `pg_cron`
-and `pg_net`. The first notification to ship is "your duty is due today."
+is iPhone-only. "Everything" comes to 22 real triggers; 7 scheduled jobs and ~13 database triggers
+cover all of them, and five are waiting on V3 tables that do not exist yet. Nothing here needs a
+paid plan, with one thing left to confirm by hand: that the free Supabase project will let us enable
+`pg_cron` and `pg_net`.
+
+Two things he should hear even though he did not ask: **only 8 of the 22 should ever buzz a phone**
+— the rest belong on the tab-bar count, because six people getting ten pushes a day will all turn
+them off inside a fortnight, and on iPhone a revoked permission is close to unrecoverable. And most
+of what he wants is a *conditional* reminder ("unless it is already done"), which is a different
+query from a plain daily send even though it is the same machinery.
+
+The first notification to ship is "your duty is due today."
