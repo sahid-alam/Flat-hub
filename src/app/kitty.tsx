@@ -1,7 +1,7 @@
-// Kitty tab, V2 "Card Stack": logo, the kitty, your top-up (brass, the one accent), quick add, who has
-// topped up, recent entries. The link pile left this screen when the tab bar arrived: fridge, shopping,
-// stock, duties and the statements live in their own tabs, and the occasional things (away, to reimburse,
-// mates, favourites, record a top-up) sit behind the people button, on /flat.
+// The kitty ledger: the balance, your top-up (brass, the one accent), quick add, who has topped up,
+// recent entries. It left the tab bar in V3 — Home's brass kitty tile is its door, which is the whole
+// risk nav Option A carries. The occasional things (away, to reimburse, mates, favourites, record a
+// top-up) sit behind the people button, on /flat.
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -21,18 +21,16 @@ import {
   Field,
   Hero,
   Icon,
-  Logo,
   Position,
   Rule,
   Screen,
   SectionLabel,
   T,
-  TAB_BAR,
   tokens,
   usePalette,
 } from '@/ui/kit';
 
-export default function KittyHome() {
+export default function Kitty() {
   const c = usePalette();
   const { width } = useWindowDimensions();
   const h = useHousehold();
@@ -59,11 +57,10 @@ export default function KittyHome() {
   const heroWidth = Math.min(width, 560) - 32 - 42;
 
   return (
-    // the tab navigator's sceneStyle pads the top inset for every tab, so no SafeAreaView here
     <View style={{ flex: 1, backgroundColor: c.ground }}>
-      <Screen padBottom={TAB_BAR}>
+      <Screen>
+        {/* the stack header carries the title and the back chevron; this row is just the month and /flat */}
         <View style={styles.header}>
-          <Logo />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <SectionLabel>{monthLabel(month)}</SectionLabel>
             <Pressable
@@ -318,7 +315,7 @@ function OnyxPill({
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', minHeight: 48 },
   mates: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   spread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   pill: {

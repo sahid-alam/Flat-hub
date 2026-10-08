@@ -51,6 +51,8 @@ function Routes() {
       </Stack.Protected>
       <Stack.Protected guard={!!data}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* the kitty ledger: off the tab bar in V3, reached from Home's brass tile */}
+        <Stack.Screen name="kitty" options={{ title: 'The kitty' }} />
         <Stack.Screen name="flat" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'The flat' }} />
         <Stack.Screen name="spend" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Add a spend' }} />
         <Stack.Screen name="topup" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Record a top-up' }} />
@@ -73,13 +75,13 @@ function Routes() {
 
 /** The web build is deep-linkable, and every screen outside `(tabs)` sits outside the tab bar: a
  *  statement link pasted into the flat's WhatsApp group, opened cold from a Home Screen install,
- *  has no history, no tab bar and no browser chrome — without this there is no way back to the
- *  Kitty. It is the whole Stack's headerLeft, so one cold deep link can never strand anyone. */
+ *  has no history, no tab bar and no browser chrome — without this there is no way back to Home.
+ *  It is the whole Stack's headerLeft, so one cold deep link can never strand anyone. */
 function Back() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={router.canGoBack() ? 'Back' : 'Kitty'}
+      accessibilityLabel={router.canGoBack() ? 'Back' : 'Home'}
       onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
       style={({ pressed }) => [
         { minHeight: 48, minWidth: 48, justifyContent: 'center' },
