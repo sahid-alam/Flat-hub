@@ -40,9 +40,14 @@ export type SummaryFacts = {
  * Paise a day, over the days of this month that have actually happened. The divisor is never 0:
  * on the 1st the month is one day old, not zero days old, or the first spend of a month would
  * divide by zero and the kitty would read as lasting forever.
+ *
+ * Rounded to the whole RUPEE. This is an average over a handful of days used to guess at a number
+ * of days — "₹232.11 a day" claims a precision the estimate does not have, and the paise are noise
+ * on a figure nobody can act on to the paise. kittyDaysLeft() divides by this same rounded rate, so
+ * the two numbers in the line always agree with each other when a mate checks them.
  */
 export const burnRate = (spentThisMonthPaise: number, daysElapsed: number): number =>
-  Math.round(spentThisMonthPaise / Math.max(1, daysElapsed));
+  Math.round(spentThisMonthPaise / Math.max(1, daysElapsed) / 100) * 100;
 
 /**
  * Whole days the kitty lasts at that rate. null when nothing is being spent (no rate, so no
@@ -66,9 +71,13 @@ const list = (xs: string[]): string =>
 
 /** Your duties today, and the meal-planning consequence if you hold that duty. */
 function dutyLine(f: SummaryFacts): string | null {
+  // "on <duty>" throughout, because a duty's name is whatever the flat typed — "dishes rota",
+  // "bins out", "kitchen floor". "You have dishes rota" and "Kabir has dishes rota" are not
+  // English; "you are on dishes rota" and "Kabir is on dishes rota" take a bare name and stay
+  // English for every one of them, without the template having to guess at an article.
   if (f.yourDutiesToday.length) {
-    const who = f.withYouToday.length ? `You and ${list(f.withYouToday)} have` : 'You have';
-    const what = `${who} ${list(f.yourDutiesToday)} today`;
+    const who = f.withYouToday.length ? `You and ${list(f.withYouToday)} are` : 'You are';
+    const what = `${who} on ${list(f.yourDutiesToday)} today`;
     return f.youPlanMeals ? `${what}, so you also tell the cook what to make.` : `${what}.`;
   }
   if (f.othersDutiesToday.length === 0) return null;
@@ -76,7 +85,7 @@ function dutyLine(f: SummaryFacts): string | null {
   const first = f.othersDutiesToday[0];
   const others = [...new Set(f.othersDutiesToday.map((d) => d.who))];
   const who = others.length === 1 ? first.who : list(others);
-  return `Nothing of yours is due today — ${who} ${plural(others.length, 'has', 'have')} ${first.duty}.`;
+  return `Nothing of yours is due today — ${who} ${plural(others.length, 'is', 'are')} on ${first.duty}.`;
 }
 
 function expiryLine(f: SummaryFacts): string | null {
@@ -99,13 +108,14 @@ function burnLine(f: SummaryFacts): string | null {
 function topUpLine(f: SummaryFacts): string | null {
   if (!f.isTreasurer || f.othersNotToppedUp === 0) return null;
   const n = f.othersNotToppedUp;
-  return `${cap(count(n))} ${plural(n, 'mate', 'mates')} ${plural(n, 'has', 'have')} still to top up this month, and you are holding ${formatINR(f.poolPaise)}.`;
+  return `${cap(count(n))} ${plural(n, 'mate', 'mates')} still ${plural(n, "hasn't", "haven't")} topped up this month, and you are holding ${formatINR(f.poolPaise)}.`;
 }
 
 function missedLine(f: SummaryFacts): string | null {
   if (f.missedYesterday === 0) return null;
   const n = f.missedYesterday;
-  return `Yesterday ${count(n)} ${plural(n, 'duty', 'duties')} ${plural(n, 'went', 'went')} undone. It is on the Duties tab if you want it.`;
+  const it = plural(n, 'It is', 'They are');
+  return `Yesterday ${count(n)} ${plural(n, 'duty', 'duties')} went undone. ${it} on the Duties tab if you want ${plural(n, 'it', 'them')}.`;
 }
 
 const LINES = 3; // three lines is a glance; a fourth is a paragraph nobody reads

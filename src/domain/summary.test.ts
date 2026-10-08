@@ -23,8 +23,9 @@ const facts = (over: Partial<SummaryFacts> = {}): SummaryFacts => ({
 // ---------------------------------------------------------------- the money in it
 
 test('burn rate divides by the days that have happened, never by zero', () => {
-  // The flat's own figures: ₹2,350 spent, 7 days in → ₹335.71 a day.
-  assert.equal(burnRate(235_000, 7), 33_571);
+  // The flat's own figures: ₹2,350 spent, 7 days in → ₹335.71 a day, quoted as ₹336. An average
+  // over a week, used to guess a number of days, does not get to claim paise.
+  assert.equal(burnRate(235_000, 7), 33_600);
   // Day one of a month: the month is one day old, not zero days old.
   assert.equal(burnRate(60_00, 1), 6000);
   assert.equal(burnRate(60_00, 0), 6000);
@@ -32,15 +33,17 @@ test('burn rate divides by the days that have happened, never by zero', () => {
 });
 
 test('days left is whole days of kitty at that rate, and silent when it cannot be known', () => {
-  assert.equal(kittyDaysLeft(1_140_000, 33_571), 33); // ₹11,400 at ₹335.71 a day
+  assert.equal(kittyDaysLeft(1_140_000, 33_600), 33); // ₹11,400 at ₹336 a day
   assert.equal(kittyDaysLeft(1_140_000, 0), null); // nothing spent yet: no rate, no estimate
-  assert.equal(kittyDaysLeft(0, 33_571), null); // an empty kitty has nothing to run down
-  assert.equal(kittyDaysLeft(-500, 33_571), null); // overdrawn: same answer, not a negative count
+  assert.equal(kittyDaysLeft(0, 33_600), null); // an empty kitty has nothing to run down
+  assert.equal(kittyDaysLeft(-500, 33_600), null); // overdrawn: same answer, not a negative count
 });
 
 test('the burn line quotes the rate and the days, and both agree with the maths', () => {
   const [line] = morningSummary(facts({ spentThisMonthPaise: 235_000, daysElapsed: 7, poolPaise: 1_140_000 }));
-  assert.match(line, /^At ₹335\.71 a day the kitty lasts about 33 more days\.$/);
+  // No paise on the rate, and the two figures check out against each other: 11,400 / 336 = 33.9.
+  assert.match(line, /^At ₹336 a day the kitty lasts about 33 more days\.$/);
+  assert.equal(Math.floor(1_140_000 / 33_600), 33);
 });
 
 test('no spending means no burn line, rather than a made-up one', () => {
@@ -55,7 +58,7 @@ test('rule 4: nothing worth saying means nothing is said', () => {
 
 test('rule 3: the summary drops the line the alert card above it already carries', () => {
   const f = facts({ isTreasurer: true, othersNotToppedUp: 2, poolPaise: 1_140_000 });
-  assert.match(morningSummary({ ...f, alert: null })[0], /still to top up/);
+  assert.match(morningSummary({ ...f, alert: null })[0], /still haven't topped up/);
   assert.ok(!morningSummary({ ...f, alert: 'topup' }).some((l) => /top up/.test(l)));
 });
 
@@ -65,7 +68,7 @@ test("rule 1: another mate's miss is a count, never a name", () => {
   ).join(' ');
   for (const name of ['Adnan', 'Anant', 'Ansh', 'Ayan', 'Jatin', 'Sahid']) assert.ok(!lines.includes(name));
   assert.match(lines, /one duty went undone/);
-  assert.match(lines, /Two mates have still to top up/);
+  assert.match(lines, /Two mates still haven't topped up/);
 });
 
 test('rule 2: no ranking words anywhere', () => {
@@ -105,19 +108,36 @@ test('at most three lines, however much is true', () => {
 test("your duty today, with whoever shares it, and the cook when it's the meal duty", () => {
   assert.equal(
     morningSummary(facts({ yourDutiesToday: ['the dishes'], withYouToday: ['Adnan'], youPlanMeals: true }))[0],
-    'You and Adnan have the dishes today, so you also tell the cook what to make.',
+    'You and Adnan are on the dishes today, so you also tell the cook what to make.',
   );
   assert.equal(
     morningSummary(facts({ yourDutiesToday: ['the dishes', 'the bins'] }))[0],
-    'You have the dishes and the bins today.',
+    'You are on the dishes and the bins today.',
   );
 });
 
 test("somebody else's turn is named, because an assignment is not a miss", () => {
   assert.equal(
     morningSummary(facts({ othersDutiesToday: [{ duty: 'the dishes', who: 'Sahid' }] }))[0],
-    'Nothing of yours is due today — Sahid has the dishes.',
+    'Nothing of yours is due today — Sahid is on the dishes.',
   );
+});
+
+test('a duty named the way the flat names it still reads as English', () => {
+  // The flat's duties are "Dishes rota", "Bins out", "Kitchen floor" — bare nouns with no article.
+  // "Kabir has dishes rota" was shipped once; "is on" is the construction that survives all of them.
+  for (const duty of ['dishes rota', 'bins out', 'kitchen floor', 'water filter change']) {
+    assert.equal(
+      morningSummary(facts({ othersDutiesToday: [{ duty, who: 'Ansh' }] }))[0],
+      `Nothing of yours is due today — Ansh is on ${duty}.`,
+    );
+    assert.equal(morningSummary(facts({ yourDutiesToday: [duty] }))[0], `You are on ${duty} today.`);
+  }
+});
+
+test('a plural miss does not get a singular pronoun', () => {
+  assert.match(morningSummary(facts({ missedYesterday: 1 })).join(' '), /one duty went undone\. It is on the Duties tab if you want it\./);
+  assert.match(morningSummary(facts({ missedYesterday: 3 })).join(' '), /three duties went undone\. They are on the Duties tab if you want them\./);
 });
 
 test('expiry says the day in words and totals the rest without listing them', () => {
