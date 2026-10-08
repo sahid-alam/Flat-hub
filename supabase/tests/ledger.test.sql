@@ -1,7 +1,7 @@
 -- Invariants 1 and 4 enforced by the database itself.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(8);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000a', 'ansh@test');
 set local role authenticated;
@@ -34,6 +34,18 @@ insert into public.spend (id, household_id, source, paid_by, paid_from, total_pa
   values ('44444444-0000-7000-8000-000000000004', '11111111-0000-7000-8000-000000000001', 'zepto', '22222222-0000-7000-8000-000000000001', 'pool', -54500, '44444444-0000-7000-8000-000000000001');
 select is((select sum(total_paise) from public.spend), 0::numeric, 'a reversal nets its target to zero');
 select is((select total_paise from public.spend where id = '44444444-0000-7000-8000-000000000001'), 54500::bigint, 'the target row is untouched');
+
+-- B8: the widened source enum. A Blinkit order is a spend like any other; a store we have never
+-- heard of is still rejected, so the enum is a real guard and not a comment.
+select lives_ok($$ select public.add_spend(
+  '{"id":"44444444-0000-7000-8000-000000000005","household_id":"11111111-0000-7000-8000-000000000001","source":"blinkit","paid_by":"22222222-0000-7000-8000-000000000001","paid_from":"pool","total_paise":118000}',
+  '[{"id":"55555555-0000-7000-8000-000000000006","name":"Chips","line_total_paise":48000},
+    {"id":"55555555-0000-7000-8000-000000000007","name":"Groceries","line_total_paise":70000}]') $$,
+  'a Blinkit order saves, lines and all');
+
+select throws_ok($$ insert into public.spend (id, household_id, source, paid_by, paid_from, total_paise)
+  values ('44444444-0000-7000-8000-000000000006', '11111111-0000-7000-8000-000000000001', 'swiggy', '22222222-0000-7000-8000-000000000001', 'pool', 100) $$,
+  '23514', null, 'a source outside the enum is still rejected');
 
 select * from finish();
 rollback;

@@ -2,6 +2,24 @@
 // Money is integer paise. Ledger reversals carry the negated amount, so every Σ is a plain sum.
 // Formulas: docs/DATA_MODEL.md.
 
+/** Where a spend came from: the five quick-commerce apps, a named shop, and everything else.
+ *  The fixed order both monthBreakdown and stats.ts's periodBreakdown lay the sources out in: the
+ *  largest-remainder rule in pcts() breaks a tie by position, so a different order is a
+ *  different percentage, not just a different row order. Append new ones, never reorder. */
+export const SOURCES = ['zepto', 'blinkit', 'instamart', 'bigbasket', 'jiomart', 'local', 'other'] as const;
+export type Source = (typeof SOURCES)[number];
+export const SOURCE_LABEL: Record<Source, string> = {
+  zepto: 'Zepto',
+  blinkit: 'Blinkit',
+  instamart: 'Instamart',
+  bigbasket: 'BigBasket',
+  jiomart: 'JioMart',
+  local: 'Local',
+  other: 'Other',
+};
+/** An app order names its own store, so only a shop bill needs a store_name typed in. */
+export const isApp = (s: Source): boolean => s !== 'local' && s !== 'other';
+
 export type Member = { id: string; joined_on: string; left_on: string | null };
 export type Absence = { member_id: string; from_date: string; to_date: string; created_at?: string };
 export type Spend = {
@@ -11,7 +29,7 @@ export type Spend = {
   total_paise: number;
   occurred_at: string;
   reverses_id: string | null;
-  source?: 'zepto' | 'local' | 'other'; // the rows carry it; the share maths doesn't care
+  source?: Source; // the rows carry it; the share maths doesn't care
 };
 export type SpendLine = { line_total_paise: number; kind: 'item' | 'fee' | 'discount' };
 /** What the breakdown needs of a spend line and the product behind it. */
@@ -184,11 +202,6 @@ export function pcts<T extends { paise: number }>(groups: T[]): (T & { pct: numb
   const share = sum(Object.values(weights)) > 0 ? allocate(100, weights) : {};
   return groups.map((g, i) => ({ ...g, pct: share[String(i)] ?? 0 }));
 }
-
-/** The fixed order both monthBreakdown and stats.ts's periodBreakdown lay the sources out in: the
- *  largest-remainder rule in allocate() breaks a tie by position, so a different order is a
- *  different percentage, not just a different row order. */
-export const SOURCES: NonNullable<Spend['source']>[] = ['zepto', 'local', 'other'];
 
 /**
  * Where a month's money went: by store source and by product category, plus pool vs own pocket.

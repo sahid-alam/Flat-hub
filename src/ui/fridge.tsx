@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { istDate } from '@/domain/kitty';
+import { isApp, istDate, SOURCE_LABEL } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import { daysLeft, expiringSoon, fefo, isEmpty, onHand, staleWarning } from '@/domain/stock';
 import { useHousehold } from '@/lib/books';
@@ -264,7 +264,8 @@ function LotDetail({
 
   const line = lines.find((l) => l.id === lot.spend_line_id) ?? null;
   const spend = line ? (spends.find((s) => s.id === line.spend_id) ?? null) : null;
-  const store = spend ? (spend.store_name ?? (spend.source === 'zepto' ? 'Zepto' : 'Shop')) : null;
+  // an app order names itself; an unnamed shop bill is just "Shop"
+  const store = spend ? (spend.store_name ?? (isApp(spend.source) ? SOURCE_LABEL[spend.source] : 'Shop')) : null;
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>

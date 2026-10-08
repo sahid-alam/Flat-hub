@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import type { Bill, BillPayment, BillShare } from '@/domain/bills';
 import type { ChoreEvent, Duty } from '@/domain/duties';
-import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
+import type { Absence, Books, Close, PoolEntry, Source, Spend } from '@/domain/kitty';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
@@ -23,7 +23,7 @@ export type MemberRow = {
   left_on: string | null;
 };
 export type AbsenceRow = Absence & { id: string; created_at: string };
-export type SpendRow = Spend & { source: 'zepto' | 'local' | 'other'; store_name: string | null; created_at: string };
+export type SpendRow = Spend & { source: Source; store_name: string | null; created_at: string };
 export type LineRow = {
   id: string;
   spend_id: string;

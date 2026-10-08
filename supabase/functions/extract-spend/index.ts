@@ -1,4 +1,4 @@
-// Reads a Zepto/Blinkit order screenshot, a bill photo or pasted text and returns an
+// Reads a quick-commerce order screenshot (Zepto, Blinkit, Instamart, BigBasket, JioMart), a bill photo or pasted text and returns an
 // Extraction-shaped JSON (see src/domain/extraction.ts). The app always shows a
 // confirm card and runs normalizeExtraction() before anything is saved.
 //
@@ -24,9 +24,9 @@ const reply = (status: number, body: unknown) =>
 
 class BadInput extends Error {}
 
-const SHAPE = `{"source":"zepto"|"local"|"other","store_name":string|null,"total_paise":integer,"occurred_on":"YYYY-MM-DD"|null,"lines":[{"name":string,"qty":number,"unit":string|null,"line_total_paise":integer,"kind":"item"|"fee"|"discount"}]}`;
+const SHAPE = `{"source":"zepto"|"blinkit"|"instamart"|"bigbasket"|"jiomart"|"local"|"other","store_name":string|null,"total_paise":integer,"occurred_on":"YYYY-MM-DD"|null,"lines":[{"name":string,"qty":number,"unit":string|null,"line_total_paise":integer,"kind":"item"|"fee"|"discount"}]}`;
 
-const INSTRUCTIONS = `This is an Indian grocery order or bill (Zepto, Blinkit, Instamart, or a local kirana/supermarket bill). Extract it for a shared-flat expense app.
+const INSTRUCTIONS = `This is an Indian grocery order or bill (Zepto, Blinkit, Swiggy Instamart, BigBasket, JioMart, or a local kirana/supermarket bill). Extract it for a shared-flat expense app.
 
 Return ONLY a JSON object in exactly this shape, with no prose and no markdown fence:
 ${SHAPE}
@@ -37,7 +37,7 @@ ${SHAPE}
 - Coupons, offers, cashback applied to this bill and other bill-level discounts are lines with kind "discount" and a NEGATIVE amount.
 - total_paise = the amount actually paid (grand total / "To pay" / "Bill total" after all fees and discounts).
 - Every line_total_paise must add up to exactly total_paise.
-- source: "zepto" for Zepto orders, "local" for a shop's paper or printed bill, otherwise "other". store_name as printed, or null.
+- source: the app the order was placed in — "zepto", "blinkit", "instamart" (Swiggy Instamart), "bigbasket" or "jiomart". Use "local" for a shop's paper or printed bill, and "other" when you cannot tell. Judge it by the logo, the app chrome or the merchant name on the bill. store_name as printed, or null.
 - occurred_on = the order or bill date as YYYY-MM-DD, or null if none is shown.
 - Copy amounts exactly as printed; do not invent lines to make the total match. If something is unreadable, leave it out.`;
 
@@ -99,9 +99,11 @@ const fixtureLines = [
   { name: 'Delivery Fee', qty: 1, unit: null, line_total_paise: 3000, kind: 'fee' },
   { name: 'Coupon SAVE50', qty: 1, unit: null, line_total_paise: -5000, kind: 'discount' },
 ];
+// A Blinkit order on purpose: the mock is the only thing that exercises a widened enum value
+// end to end without a real key.
 const FIXTURE = {
-  source: 'zepto',
-  store_name: 'Zepto',
+  source: 'blinkit',
+  store_name: 'Blinkit',
   total_paise: fixtureLines.reduce((s, l) => s + l.line_total_paise, 0),
   occurred_on: '2026-10-03',
   lines: fixtureLines,

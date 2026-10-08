@@ -1,7 +1,7 @@
 // Receipt / Zepto extraction: clean up what the LLM returned, and match lines to products.
 // Pure TypeScript: no React, no Supabase. Money is integer paise.
 
-import { linesBalance } from './kitty.ts';
+import { linesBalance, SOURCES, type Source } from './kitty.ts';
 import { formatINR, parseRupees } from './money.ts';
 
 export type ExtractedLine = {
@@ -12,7 +12,7 @@ export type ExtractedLine = {
   kind: 'item' | 'fee' | 'discount';
 };
 export type Extraction = {
-  source: 'zepto' | 'local' | 'other';
+  source: Source;
   store_name: string | null;
   total_paise: number;
   occurred_on: string | null;
@@ -20,7 +20,6 @@ export type Extraction = {
 };
 
 const KINDS = ['item', 'fee', 'discount'] as const;
-const SOURCES = ['zepto', 'local', 'other'] as const;
 const LABEL = { item: 'Item', fee: 'Fee', discount: 'Discount' } as const;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -92,6 +91,23 @@ export function normalizeExtraction(raw: unknown): { extraction: Extraction | nu
   const source = SOURCES.includes(raw.source as never) ? (raw.source as Extraction['source']) : 'other';
 
   return { extraction: { source, store_name: text(raw.store_name), total_paise: total, occurred_on, lines }, problems };
+}
+
+/**
+ * The flat's share of a bill, once a mate's own lines are taken off it. The ₹480 of chips that rode
+ * on the flat's ₹1,180 Blinkit order leaves both the lines AND the total, so the saved spend is the
+ * ₹700 the flat actually owes and the kitty never sees the chips. The full bill is still kept, raw,
+ * on `spend.extraction`.
+ *
+ * Invariant 1 survives: a bill whose lines summed to its total still balances afterwards, because
+ * the same amount comes off both sides.
+ */
+export function flatShare<L extends { line_total_paise: number; mine?: boolean }>(
+  totalPaise: number,
+  lines: L[],
+): { total_paise: number; lines: L[] } {
+  const mine = sum(lines.filter((l) => l.mine).map((l) => l.line_total_paise));
+  return { total_paise: totalPaise - mine, lines: lines.filter((l) => !l.mine) };
 }
 
 export type ProductLike = { id: string; name: string; aliases: string[] };

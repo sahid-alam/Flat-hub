@@ -1,21 +1,22 @@
-// Import a Zepto order (screenshot, bill photo or typed text) → the LLM reads it → a confirm card → save.
-// PDFs are not supported: the reader takes images only (supabase/functions/extract-spend/README.md).
+// Read a bill (a screenshot of an app order, a photo of a paper bill, or typed text) → the LLM reads
+// it → a confirm card → save. One door, not two: "import a Zepto order" and "photo of the bill" were
+// the same reader wearing two hats, and the reader was never Zepto-specific.
+// PDFs are not supported: it takes images only (supabase/functions/extract-spend/README.md).
 // Nothing is saved until a mate has looked at the card and the lines add up.
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { matchProduct, normalizeExtraction, normalizeName, type Extraction } from '@/domain/extraction';
-import { linesBalance } from '@/domain/kitty';
+import { flatShare, matchProduct, normalizeExtraction, normalizeName, type Extraction } from '@/domain/extraction';
+import { isApp, linesBalance } from '@/domain/kitty';
 import { formatINR, parseLineRupees, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
 import { extractSpend, type ExtractInput } from '@/lib/extract';
 import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
 import { dateToTimestamp, sayError, today } from '@/lib/util';
-import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, WarnNote } from '@/ui/capture';
+import { AmountBlock, BalanceBar, ReadingSkeleton, roundingLine, SourceRow, WarnNote } from '@/ui/capture';
 import { Block, Choice, DateField, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 import { blankDraft, draftColumns, draftOk, ProductFields, type ProductDraft } from '@/ui/product';
 import { usePutAway } from '@/ui/putaway';
@@ -30,6 +31,7 @@ type Line = {
   unit: string | null;
   product_id: string | null;
   confirmed: boolean; // exact name/alias match, or the mate tapped Yes; only these teach an alias
+  mine: boolean; // the buyer's own, not the flat's: off the saved lines and off the total
 };
 type Draft = {
   id: string; // one spend id per extraction: a retried save is a no-op, a new import is a new spend
@@ -110,6 +112,7 @@ export default function ImportOrder() {
           kind: l.kind,
           qty: l.qty,
           unit: l.unit,
+          mine: false,
           ...match(l.name, l.kind),
         })),
       });
@@ -120,19 +123,10 @@ export default function ImportOrder() {
     }
   }
 
-  const pickFile = () =>
-    read(async () => {
-      const res = await DocumentPicker.getDocumentAsync({ type: ['image/*'], copyToCacheDirectory: true });
-      const a = res.assets?.[0];
-      if (res.canceled || !a) return null;
-      if (a.mimeType === 'application/pdf' || a.name.toLowerCase().endsWith('.pdf'))
-        throw new Error('PDFs cannot be read yet — screenshot the order instead.');
-      const media_type = imageType(a.mimeType);
-      const data = await readBase64(a.base64 ?? a.uri);
-      return { type: 'image', media_type, data };
-    });
-
-  const pickScreenshot = () =>
+  // One picture button, not two. A screenshot of an app order and a photo of a paper bill are both
+  // just images in the library, and both reached the same reader; the file picker was a second door
+  // onto the same room.
+  const pickPicture = () =>
     read(async () => {
       // native: quality < 1 re-encodes to JPEG (smaller, no HEIC); web ignores it, so imageType still checks
       const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.7 });
@@ -164,14 +158,11 @@ export default function ImportOrder() {
   if (!draft) {
     return (
       <Screen>
-        <T soft>Pick a screenshot of the Zepto order or a photo of the bill. You'll check every line before anything is saved.</T>
-        <MagnetButton label="Picture of the bill" icon={{ ios: 'doc', android: 'description' }} onPress={pickFile} />
-        <MagnetButton
-          label="Screenshot from photos"
-          outline
-          icon={{ ios: 'photo', android: 'image' }}
-          onPress={pickScreenshot}
-        />
+        <T soft>
+          A screenshot of the order — Zepto, Blinkit, Instamart, BigBasket, JioMart — or a photo of a shop bill.
+          You&apos;ll check every line before anything is saved.
+        </T>
+        <MagnetButton label="Screenshot or photo of the bill" icon={{ ios: 'photo', android: 'image' }} onPress={pickPicture} />
         <Block>
           <Field
             label="Or type it"
@@ -212,10 +203,15 @@ export default function ImportOrder() {
   });
   const linesValid = parsed.every((l) => l.paise !== null && l.name.trim()); // no lines is fine, as on /spend
   const linesTotal = parsed.reduce((a, l) => a + (l.paise ?? 0), 0);
+  // The whole bill has to balance first — that is the reader's work being checked, and every line on
+  // the bill was paid for, mine or not.
   const balanced =
     total !== null && linesValid && linesBalance(total, parsed.map((l) => ({ line_total_paise: l.paise!, kind: l.kind })));
+  // Then the buyer's own lines come off both sides, and what is left is what the flat is charged.
+  const flat = flatShare(total ?? 0, parsed.map((l) => ({ ...l, line_total_paise: l.paise ?? 0 })));
+  const mineTotal = (total ?? 0) - flat.total_paise;
   // Re-run the domain checks on what's on screen, so the problems list follows every edit.
-  const ready = balanced && !draft.totalGuessed;
+  const ready = balanced && !draft.totalGuessed && flat.total_paise > 0;
   const problems: string[] =
     total === null
       ? ['Enter the amount paid.']
@@ -242,15 +238,17 @@ export default function ImportOrder() {
         id: draft.id,
         household_id: household.id,
         source: draft.source,
-        store_name: draft.source === 'zepto' ? null : draft.store.trim() || null,
+        store_name: isApp(draft.source) ? null : draft.store.trim() || null,
         paid_by: paidBy,
         paid_from: paidFrom,
-        total_paise: total,
+        // the flat's share, not the card's: the buyer's own lines are off it. The whole bill is
+        // still on `extraction` below, so the record of what was actually paid is not lost.
+        total_paise: flat.total_paise,
         occurred_at: draft.date === today() ? null : dateToTimestamp(draft.date),
         extraction: draft.raw,
       },
       // a ₹0 fee or discount means nothing, and the DB rejects a ₹0 discount
-      p_lines: parsed.filter((l) => l.kind === 'item' || l.paise !== 0).map((l) => ({
+      p_lines: flat.lines.filter((l) => l.kind === 'item' || l.paise !== 0).map((l) => ({
         id: l.id,
         name: l.name.trim(),
         qty: l.qty,
@@ -267,7 +265,7 @@ export default function ImportOrder() {
     // Teach the catalogue the names Zepto uses, so the next import matches straight away.
     // ponytail: best-effort, the spend is already saved; a missed alias only costs a re-match later
     await Promise.all(
-      parsed.map((l) => {
+      flat.lines.map((l) => {
         const p = products.find((x) => x.id === l.product_id);
         const n = normalizeName(l.name);
         if (!p || !l.confirmed || n === normalizeName(p.name) || p.aliases.some((a) => normalizeName(a) === n)) return null;
@@ -276,8 +274,9 @@ export default function ImportOrder() {
     );
     // Tracked items become lots. Resolves at once when nothing on the bill is tracked; awaited
     // before router.back(), which unmounts the sheet.
+    // flat.lines, not parsed: the buyer's own chips are not the flat's stock.
     await putAway.ask(
-      parsed
+      flat.lines
         .filter((l) => l.kind === 'item')
         .map((l) => ({ id: l.id, name: l.name.trim(), product_id: l.product_id, qty: l.qty, unit: l.unit, kind: l.kind })),
     );
@@ -285,7 +284,7 @@ export default function ImportOrder() {
     router.back();
   }
 
-  const blankLine = (): Line => ({ id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false });
+  const blankLine = (): Line => ({ id: newId(), name: '', amount: '', kind: 'item', qty: 1, unit: null, product_id: null, confirmed: false, mine: false });
 
   return (
     <Screen>
@@ -305,7 +304,13 @@ export default function ImportOrder() {
         <SectionLabel>Paid from</SectionLabel>
         <Choice
           value={paidFrom}
-          onChange={setPaidFrom}
+          onChange={(v) => {
+            setPaidFrom(v);
+            // "Mine" only makes sense on an own-pocket bill: if the kitty paid the whole ₹1,180,
+            // dropping ₹480 of it would leave the pool ₹480 lighter than the books say. Switching
+            // to the pool therefore gives those lines back to the flat rather than hiding them.
+            if (v === 'pool') set({ lines: draft.lines.map((l) => ({ ...l, mine: false })) });
+          }}
           options={[
             { value: 'pool', label: 'From pool' },
             { value: 'personal', label: 'Own pocket' },
@@ -318,21 +323,13 @@ export default function ImportOrder() {
         )}
       </View>
 
-      <View style={{ gap: 8 }}>
-        <SectionLabel>Where from</SectionLabel>
-        <Choice
-          value={draft.source}
-          onChange={(source) => set({ source })}
-          options={[
-            { value: 'zepto', label: 'Zepto' },
-            { value: 'local', label: 'Local' },
-            { value: 'other', label: 'Other' },
-          ]}
-        />
-      </View>
-      {draft.source !== 'zepto' && (
-        <Field label="Store (optional)" value={draft.store} onChangeText={(store) => set({ store })} placeholder="Sharma Dairy" />
-      )}
+      <SourceRow
+        source={draft.source}
+        store={draft.store}
+        onChange={(source) => set({ source })}
+        onChangeStore={(store) => set({ store })}
+        detected
+      />
       <DateField label="Bought on" value={draft.date} onChange={(date) => date <= today() && set({ date })} />
 
       <Block>
@@ -360,16 +357,26 @@ export default function ImportOrder() {
                   <Icon name={{ ios: 'xmark', android: 'close' }} size={18} color={c.muted} />
                 </Pressable>
               </View>
+              {/* ponytail: "Mine" rides in the kind radiogroup rather than getting a toggle of its
+                  own — it is exclusive with the other three in practice, and reusing the control
+                  costs no new visual language. `kind` is kept underneath, because a mine line is
+                  still on the bill and still has to balance. Own-pocket only: see "Paid from". */}
               <Choice
-                value={l.kind}
-                onChange={(kind) => update(i, { kind, ...match(l.name, kind) })}
+                value={l.mine ? 'mine' : l.kind}
+                onChange={(v) =>
+                  v === 'mine'
+                    ? update(i, { mine: true })
+                    : update(i, { mine: false, kind: v as Kind, ...match(l.name, v as Kind) })
+                }
                 options={[
                   { value: 'item', label: 'Item' },
                   { value: 'fee', label: 'Fee' },
                   { value: 'discount', label: 'Discount' },
+                  ...(paidFrom === 'personal' || l.mine ? [{ value: 'mine' as const, label: 'Mine' }] : []),
                 ]}
               />
               {l.kind === 'item' &&
+                !l.mine && // a line that isn't the flat's doesn't need matching to the catalogue
                 (product ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <T size={15} weight="600" color={c.positive} style={{ flex: 1 }}>
@@ -463,6 +470,22 @@ export default function ImportOrder() {
         </T>
       ))}
 
+      {/* What the flat is actually charged, once the buyer's own lines are off the bill. */}
+      {mineTotal !== 0 && total !== null && linesValid && (
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <T weight="700">The flat&apos;s share</T>
+          <T num size={22}>
+            {formatINR(flat.total_paise)}
+          </T>
+        </View>
+      )}
+      {mineTotal !== 0 && (
+        <T size={15} soft>
+          {formatINR(mineTotal)} of this bill is yours, so it comes off the lines and off the total. The whole bill is
+          still kept with the spend.
+        </T>
+      )}
+
       <ErrorText error={error} />
       <MagnetButton
         label={
@@ -474,7 +497,9 @@ export default function ImportOrder() {
                 ? 'Save once lines add up'
                 : draft.totalGuessed
                   ? 'Check the total'
-                  : `Save ${formatINR(total)}`
+                  : flat.total_paise <= 0
+                    ? 'Nothing here is the flat’s'
+                    : `Save ${formatINR(flat.total_paise)}`
         }
         color="brass"
         disabled={busy || !ready}
