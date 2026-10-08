@@ -123,6 +123,32 @@ test("somebody else's turn is named, because an assignment is not a miss", () =>
   );
 });
 
+test('two mates on one duty and a third on another are not merged into one duty', () => {
+  // The bug this locks: "Sahid, Anant and Jatin are on dishes rota" when Jatin is on the water can.
+  const f = facts({
+    othersDutiesToday: [
+      { duty: 'dishes rota', who: 'Sahid' },
+      { duty: 'dishes rota', who: 'Anant' },
+      { duty: 'water can refill', who: 'Jatin' },
+    ],
+  });
+  assert.equal(
+    morningSummary(f)[0],
+    'Nothing of yours is due today — Sahid and Anant are on dishes rota and Jatin on water can refill.',
+  );
+  // Past two duties it counts rather than listing, like the expiry line.
+  const four = facts({
+    othersDutiesToday: ['dishes rota', 'water can refill', 'bins out', 'kitchen floor'].map((duty, i) => ({
+      duty,
+      who: ['Sahid', 'Anant', 'Jatin', 'Ayan'][i],
+    })),
+  });
+  assert.equal(
+    morningSummary(four)[0],
+    'Nothing of yours is due today — Sahid is on dishes rota, Anant on water can refill and two other duties are covered.',
+  );
+});
+
 test('a duty named the way the flat names it still reads as English', () => {
   // The flat's duties are "Dishes rota", "Bins out", "Kitchen floor" — bare nouns with no article.
   // "Kabir has dishes rota" was shipped once; "is on" is the construction that survives all of them.

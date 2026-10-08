@@ -82,10 +82,28 @@ function dutyLine(f: SummaryFacts): string | null {
   }
   if (f.othersDutiesToday.length === 0) return null;
   // Naming whose turn it is is an assignment, not a miss — rule 1 is about misses.
-  const first = f.othersDutiesToday[0];
-  const others = [...new Set(f.othersDutiesToday.map((d) => d.who))];
-  const who = others.length === 1 ? first.who : list(others);
-  return `Nothing of yours is due today — ${who} ${plural(others.length, 'is', 'are')} on ${first.duty}.`;
+  //
+  // Grouped by DUTY, not flattened into one list of names. Flattened, a day where Sahid and Anant
+  // have the dishes and Jatin has the water can read "Sahid, Anant and Jatin are on dishes rota",
+  // which puts a mate on a duty that is not his — the summary's whole claim is that it cannot
+  // disagree with the ledger, and that is a disagreement a mate would notice before breakfast.
+  const byDuty = new Map<string, string[]>();
+  for (const d of f.othersDutiesToday) {
+    const who = byDuty.get(d.duty) ?? [];
+    if (!who.includes(d.who)) who.push(d.who);
+    byDuty.set(d.duty, who);
+  }
+  const groups = [...byDuty].map(([duty, who]) => ({ duty, who }));
+  const phrase = (g: { duty: string; who: string[] }, verb = true) =>
+    `${list(g.who)}${verb ? ` ${plural(g.who.length, 'is', 'are')}` : ''} on ${g.duty}`;
+  // Two duties is the most that stays a sentence; past that the rest become a count, the same way
+  // the expiry line stops listing and starts counting. `list()` puts the commas and the single
+  // "and" in, so three clauses never read as "and ... and ...".
+  const rest = groups.length - 2;
+  const clauses = [phrase(groups[0])];
+  if (groups.length > 1) clauses.push(phrase(groups[1], false));
+  if (rest > 0) clauses.push(`${count(rest)} other ${plural(rest, 'duty', 'duties')} ${plural(rest, 'is', 'are')} covered`);
+  return `Nothing of yours is due today — ${list(clauses)}.`;
 }
 
 function expiryLine(f: SummaryFacts): string | null {
