@@ -217,7 +217,9 @@ function TopUpCard({
           </T>
         )}
       </View>
-      <Hero paise={paise ?? suggested} size={44} />
+      {/* a figure inside a card, so DESIGN.md's card-figure 34 — it was V2's 44, which the V3
+          scale no longer has a slot for. The hero on this screen is the kitty balance, not this. */}
+      <Hero paise={paise ?? suggested} size={34} />
       <T size={13} weight="600" soft>
         Position {formatINR(pos, { sign: true })} · {formatINR(monthly)} a month + catch-up
       </T>
