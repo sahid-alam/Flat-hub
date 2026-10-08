@@ -116,7 +116,7 @@ export default function Home() {
     return {
       key: l.id,
       name: productName(l.product_id),
-      label: d < 0 ? `Expired ${dayLabel(l.expiry_date!)}` : d === 0 ? 'Use today' : `${d} days left`,
+      label: d < 0 ? `Expired ${dayLabel(l.expiry_date!)}` : d === 0 ? 'Use today' : `${d} day${d === 1 ? '' : 's'} left`,
       urgent: d <= 0,
     };
   });
@@ -239,7 +239,7 @@ export default function Home() {
           {/* The one brass thing on Home, and the only door to the ledger. Unconditional. */}
           <StatTile
             cap="In the kitty"
-            big={formatINR(pool)}
+            paise={pool}
             sub={isTreasurer ? 'you hold it' : holderFirst ? `held by ${holderFirst}` : 'no treasurer set'}
             brass
             onPress={() => router.push('/kitty')}
@@ -247,7 +247,8 @@ export default function Home() {
           />
           <StatTile
             cap="Your position"
-            big={mine === 0 ? 'Settled' : formatINR(mine, { sign: true })}
+            {...(mine === 0 ? { big: 'Settled' } : { paise: mine })}
+            positive={mine > 0}
             sub={mine > 0 ? 'to get back' : mine < 0 ? 'due at your next top-up' : 'nothing either way'}
           />
           <StatTile cap="Duty points" big={String(points)} sub="this month" />

@@ -2,37 +2,55 @@
 // hands each card finished facts, so nothing here reads the books.
 // docs/PATTERNS.md §1: Asana's skeleton (date line → greeting → ONE alert → today → recent) with
 // Zopa's snapshot block as the three tiles.
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
-import { Block, Icon, Rule, T, useInk, usePalette } from '@/ui/kit';
+import { Block, Hero, Icon, Rule, T, useInk, usePalette } from '@/ui/kit';
+
+/** Screen gutter (16 each side) and the two 8pt gaps between three tiles, then the tile's padding. */
+const tileInnerWidth = (screen: number) => (Math.min(screen, 560) - 32 - 16) / 3 - 24;
 
 /** One of the three snapshot tiles. The brass one is the kitty, and it is the only brass on Home. */
 export function StatTile({
   cap,
   big,
+  paise,
   sub,
+  positive,
   brass,
   onPress,
   accessibilityLabel,
 }: {
   cap: string;
-  big: string;
+  /** A word ("Settled") or a plain count ("412"). For money pass `paise` instead. */
+  big?: string;
+  /** An amount. Drawn with Hero, which shrinks the digits to the tile — a five-figure kitty in a
+   *  third of a 390pt screen truncates at any fixed size, and a truncated rupee figure is a lie. */
+  paise?: number;
   sub: string;
+  /** "Get back" green. The sub line always carries the word too, so colour never means alone. */
+  positive?: boolean;
   brass?: boolean;
   onPress?: () => void;
   accessibilityLabel?: string;
 }) {
   const c = usePalette();
+  const { width } = useWindowDimensions();
   // A brass tile carries onyx ink in both modes, exactly as a brass Block does.
   const ink = brass ? { ink: c.onAccent, muted: '#3A342B' } : { ink: c.ink, muted: c.muted };
   const body = (
     <>
-      <T size={11.5} weight="800" color={ink.muted} style={st.cap}>
+      <T size={11} weight="800" color={ink.muted} numberOfLines={2} style={st.cap}>
         {cap.toUpperCase()}
       </T>
-      <T num size={22} color={ink.ink} numberOfLines={1}>
-        {big}
-      </T>
+      {paise === undefined ? (
+        <T num size={21} color={ink.ink} numberOfLines={1}>
+          {big}
+        </T>
+      ) : (
+        // Hero draws a minus for a negative and nothing for a positive; the sub line says which,
+        // so the figure needs no plus sign to be unambiguous.
+        <Hero paise={paise} size={21} color={positive ? c.positive : ink.ink} maxWidth={tileInnerWidth(width)} />
+      )}
       <T size={12} weight="600" color={ink.muted} numberOfLines={2}>
         {sub}
       </T>
@@ -241,9 +259,9 @@ export function Strip({ children }: { children: React.ReactNode }) {
 }
 
 const st = StyleSheet.create({
-  cap: { letterSpacing: 1.4 },
+  cap: { letterSpacing: 0.8 },
   tiles: { flexDirection: 'row', gap: 8 },
-  tile: { flex: 1, minWidth: 0, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 12, gap: 2, minHeight: 96 },
+  tile: { flex: 1, minWidth: 0, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 12, gap: 3, minHeight: 104 },
   alert: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 24, borderWidth: 1, padding: 14 },
   alertPill: { minHeight: 48, paddingHorizontal: 16, borderRadius: 9999, borderWidth: 1.5, justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },

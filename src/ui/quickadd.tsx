@@ -15,6 +15,11 @@ import { Block, Choice, ErrorText, Field, MagnetButton, Row, Rule, SectionLabel,
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
 
+const STRIP_TILE = 136;
+const Pinned = ({ children }: { children: React.ReactNode }) => (
+  <View style={{ width: STRIP_TILE }}>{children}</View>
+);
+
 type Logged = { spend: Parameters<typeof reverseSpend>[0]; name: string; undone?: boolean };
 
 /**
@@ -67,12 +72,20 @@ export function QuickAdd({ compact }: { compact?: boolean } = {}) {
     return (
       <View style={{ gap: 12 }}>
         <Strip>
+          {/* Tile is flexGrow:1, which fills a horizontal scroller end to end, so each one is pinned
+              to a fixed width here. Two and a bit are visible at 390pt, which is the point of a strip. */}
           {favourites.length === 0 ? (
-            <Tile title="Pick favourites" detail="milk, atta, eggs" onPress={() => router.push('/favourites')} />
+            <Pinned>
+              <Tile title="Pick favourites" detail="milk, atta, eggs" onPress={() => router.push('/favourites')} />
+            </Pinned>
           ) : (
             <>
-              {tiles}
-              <Tile title="More" detail="edit the list" onPress={() => router.push('/favourites')} />
+              {tiles.map((t) => (
+                <Pinned key={t.key}>{t}</Pinned>
+              ))}
+              <Pinned>
+                <Tile title="More" detail="edit the list" onPress={() => router.push('/favourites')} />
+              </Pinned>
             </>
           )}
         </Strip>

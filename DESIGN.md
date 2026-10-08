@@ -161,6 +161,15 @@ and top-aligned.
 - `Field`, `DateField`, `Row`, `Rule`, `ErrorText`, `StarToggle` and `Icon` keep the same API as before.
 - `useInk()` returns `{ ink, muted, positive }` for the current block, for custom drawing inside blocks. A filled block keeps one fill in both modes, so `positive` is the block's readable green (onyx on brass and sage), not the palette's.
 
+### The shell and Home (V3)
+
+- **`CapsuleNav`** (`src/ui/navbar.tsx`) is the floating nav: one `navRest` capsule holding four absolutely positioned slots — Home · Fridge · Duties · Spending — with the active one expanded to a `navActive` pill carrying a filled `solid` icon badge and its label, and the + as a separate `solid` circle outside it. It floats 12pt above the safe area, inset from the edges, with content passing behind it and no shadow (rule 6). **Every slot is `position: 'absolute'`; it must never become a flex row** — a slot's position depending on its neighbours' widths is what made the measured row bulge 19px and snap 27.5px. `geom()` is pure arithmetic over four constants, so nothing is measured at runtime, and because exactly one slot is expanded the capsule's width never changes. Being a custom `tabBar`, it re-emits by hand everything the stock bar gave for free: `tablist`/`tab` roles, a spoken name on all four (they are icon-only), `aria-selected` (react-native-web 0.21 drops `accessibilityState.selected`, so the ARIA prop is passed explicitly), 48pt slots whatever the visual width, and DOM order left in design order so focus order survives.
+- **`AddSheet`** (`src/ui/addsheet.tsx`) — see rule 11.
+- **`StatTile({ cap, big | paise, sub, positive?, brass?, onPress? })`** is one of Home's three snapshot tiles. Pass `paise` for money: it draws with `Hero`, which shrinks the digits to the tile, because a five-figure kitty in a third of a 390pt screen truncates at any fixed size and a truncated rupee figure is a lie. The brass one is the kitty and is the screen's single accent.
+- **`AlertCard({ title, detail, action, onPress })`** — Home shows **exactly one, or none**. Priority: the treasurer's "to pay back", then "to get back", then "your top-up isn't in yet".
+- **`SummaryCard({ lines })`** draws `src/domain/summary.ts`'s output and renders nothing at all when there are no lines.
+- **`TodayCard`**, **`Section`** and **`Strip`** are Home's remaining parts; `Strip` is the one horizontally scrolling row Quick add was shrunk into (`<QuickAdd compact />`).
+
 The old fridge-door names (`enamel`, `paper`, `inkSoft`, `rule`, `green`, `tomato`, `blue`, `orange`,
 `plum`, `onMagnet`) remain as aliases, repointed at the new palette, so untouched screens still compile.
 New code uses the names in the table above.
@@ -174,10 +183,10 @@ New code uses the names in the table above.
 5. **Words.** Write "Pay"/"Get back", not "owe", and "Not yet", not "Overdue". The Statement footer reads "Total ₹11,400".
 6. **Depth** comes from surface steps (ground → surface → raised → sunk). There are no drop shadows.
 7. **Targets** are at least 48px and every button is a pill. Cards use a 20–28px radius (blocks 24, month cards 26, tiles 20).
-8. **The floating + Add pill must not cover content.** Give the screen `padBottom` equal to the pill height plus its offset and the safe area.
+8. **The floating nav must not cover content.** Every tab screen passes `padBottom={TAB_BAR}` (72 = the capsule's 60 plus the 12 it floats); `Screen` adds the safe-area inset itself. `TAB_BAR` in kit must stay equal to `NAV_HEIGHT` in `src/ui/navbar.tsx`.
 9. **Month names** are sized to fit the card width and must never look truncated on the right. They bleed only off the bottom.
-10. **Motion** is 150–250ms ease-out with a press scale of 0.97. Honour reduced motion. There is no shared-element card expand (it doesn't run on web) and no `navigator.vibrate`.
-11. **Add / quick-add** use the existing modal routes (`spend`, `topup`, `import`) presented as bottom-sheet-style modals. There is no custom sheet.
+10. **Motion** is 150–280ms ease-out with a press scale of 0.97. Honour reduced motion — Reanimated's `withTiming` does it for free (`ReduceMotion.System`), a CSS transition does not. Screens animate: `src/ui/stack.ts` / `stack.web.ts` platform-split so web gets `expo-router/js-stack`, which can animate, with `slide_from_right` on pushes and `slide_from_bottom` on modals, and `animation: 'shift'` on the tabs. There is no shared-element card expand (it doesn't run on web) and no `navigator.vibrate`.
+11. **Add / quick-add.** The + in the floating nav opens **one custom sheet** — four labelled tiles that hand off to the existing modal routes (`spend`, `topup`, `import`, `shopping`). It grows out of the + circle (`transformOrigin` derived from the nav's own constants, nothing measured), because the owner asked for the animation to come from the button; a bottom-edge slide does not. That is the only custom sheet in the app — everything else still uses a modal route. A radial or arc menu is rejected, and **destinations never go in it** (PATTERNS §7): the kitty is reached from Home's brass tile, the profile from the avatar.
 12. **Statements** are a stack of `MonthCard`s, newest first. Tapping a card opens that month: spent, the Zepto vs Local split (two labelled values and one 2-segment bar), a Mate | Days | Share table in alphabetical order, and absences tagged "added late".
 13. **Contrast** must be WCAG AA: text at least 4.5:1, borders and focus at least 3:1, in both modes. Add any new pair to `docs/design/tokens-contrast.js` and run it — don't eyeball it.
 

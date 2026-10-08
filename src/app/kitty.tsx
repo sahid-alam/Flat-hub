@@ -93,7 +93,8 @@ export default function Kitty() {
             </T>
             <Position paise={mine} />
             <T size={15} weight="600" soft>
-              {mine > 0 ? '· the kitty owes you' : mine < 0 ? '· due at your next top-up' : '· all square'}
+              {/* DESIGN.md rule 5: "Get back", never "owe". This line predates V3 and said "the kitty owes you". */}
+              {mine > 0 ? '· to get back' : mine < 0 ? '· due at your next top-up' : '· all square'}
             </T>
           </View>
         </Block>

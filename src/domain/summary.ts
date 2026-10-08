@@ -57,6 +57,8 @@ const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eig
 /** 'two mates' reads better than '2 mates'. Figures stay figures; only small counts spell out. */
 const count = (n: number): string => (n < WORDS.length ? WORDS[n] : String(n));
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+/** A line is prose, so a sentence inside it starts with a capital. */
+const cap = (word: string): string => word[0].toUpperCase() + word.slice(1);
 
 /** 'the dishes and the bins', without an Oxford comma argument. */
 const list = (xs: string[]): string =>
@@ -82,7 +84,7 @@ function expiryLine(f: SummaryFacts): string | null {
   const [first] = f.expiring;
   const when = first.daysLeft <= 0 ? 'today' : `in ${count(first.daysLeft)} ${plural(first.daysLeft, 'day', 'days')}`;
   const rest = f.expiring.length - 1;
-  const more = rest > 0 ? ` ${count(rest)} other ${plural(rest, 'thing', 'things')} ${plural(rest, 'needs', 'need')} using too.` : '';
+  const more = rest > 0 ? ` ${cap(count(rest))} other ${plural(rest, 'thing', 'things')} ${plural(rest, 'needs', 'need')} using too.` : '';
   return `The ${first.name.toLowerCase()} needs using — ${when}.${more}`;
 }
 
@@ -97,7 +99,7 @@ function burnLine(f: SummaryFacts): string | null {
 function topUpLine(f: SummaryFacts): string | null {
   if (!f.isTreasurer || f.othersNotToppedUp === 0) return null;
   const n = f.othersNotToppedUp;
-  return `${count(n)[0].toUpperCase()}${count(n).slice(1)} ${plural(n, 'mate', 'mates')} ${plural(n, 'has', 'have')} still to top up this month, and you are holding ${formatINR(f.poolPaise)}.`;
+  return `${cap(count(n))} ${plural(n, 'mate', 'mates')} ${plural(n, 'has', 'have')} still to top up this month, and you are holding ${formatINR(f.poolPaise)}.`;
 }
 
 function missedLine(f: SummaryFacts): string | null {

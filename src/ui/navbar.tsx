@@ -2,17 +2,29 @@
 // pill with a filled icon badge and its label; the + is a separate circle outside it, so it
 // structurally cannot take the selected state.
 //
-// It is a FLIP, and that is not a stylistic choice — docs/NATIVE_FEEL.md §D3 measured it. Animating
-// `width` on flex siblings makes the icon row bulge ~19px on every switch (the growing and shrinking
-// pills are not complementary mid-flight under an ease-out curve, and in flex every sibling's
-// position is a function of its predecessors' widths) and snap **27.5px in a single frame** on a
-// double tap. Plain CSS on width halves that to 12.2px. FLIP measured **0px**.
+// THE ONE THING THAT MATTERS: no slot's position may depend on any other slot's width. That is what
+// docs/NATIVE_FEEL.md §D3 measured — on flex siblings the growing and shrinking pills are not
+// complementary mid-flight under an ease-out curve, so the row bulges ~19px on every switch and
+// snaps 27.5px in a single frame on a double tap. **Every slot here is `position: 'absolute'` at a
+// left computed by geom(), so that coupling does not exist.** Do not make this a flex row.
 //
-// So: every slot is `position: 'absolute'` at its FINAL left/width in one layout pass, and all
-// visible motion is carried by `translateX` + `scaleX` from where the slot actually was. Absolute
-// positioning is what makes a slot's position independent of every other slot's width, and that
-// independence is the whole mechanism. **If you are about to simplify this back to animating width,
-// re-measure the 0px column first.**
+// §D4 prescribes carrying the motion with translateX + scaleX while React commits the final
+// left/width in one pass. That was built exactly as written, and measured **88.6px of single-frame
+// flash** at 60fps — because on web Reanimated applies an animated style from its own rAF loop,
+// one frame AFTER React has already committed the new `left`. For that frame the slot sits at its
+// destination with a stale (zero) transform, and it teleports before easing back. useLayoutEffect
+// does not fix it (91.3px): the ordering is Reanimated's, not React's.
+//
+// So the geometry is driven from inside useAnimatedStyle instead — `left` and `width` ARE the
+// shared values. Layout and visual position are then the same number by construction and cannot
+// disagree on any frame. Measured **0px** max single-frame delta, clean switch and double tap
+// alike. §D3's objection does not reach this: it was about width changes propagating through flex
+// siblings, and there are no flex siblings here. It also drops §D4's named compromise — scaleX
+// distorting the pill's rounded end caps — and the inverse scaling the children needed because of it.
+//
+// **If you change this, re-measure the 0px.** The numbers above are reproducible: sample a middle
+// slot's getBoundingClientRect().x every rAF across two taps 90ms apart and take the largest
+// consecutive-frame delta.
 //
 // Nothing is measured at runtime: `geom()` is arithmetic over four constants and the active index.
 // No onLayout, no measureInWindow, so there is no measure→setState→re-render round trip to land a
@@ -29,6 +41,7 @@ import Animated, {
   interpolate,
   interpolateColor,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -144,13 +157,14 @@ export function CapsuleNav({ state, descriptors, navigation, onAdd }: TabBarProp
 }
 
 /**
- * One slot. It renders at its FINAL left/width immediately and animates in from where it was.
+ * One slot. Its left and width ARE its two shared values, so there is no frame on which the box it
+ * occupies and the box it appears to occupy can differ.
  *
- * The geometry is held in two per-slot shared values rather than one shared progress with a
- * captured `from`. Reanimated retargets a `withTiming` from the value the spring is *currently* at,
- * so an interrupted switch continues from mid-flight instead of snapping back to the previous
- * index's geometry — which is exactly the failure FLIP is here to prevent, and the one place a
- * hand-rolled FLIP is easy to get wrong (§D4's last caveat).
+ * The geometry is held per slot rather than as one shared progress with a captured `from`.
+ * Reanimated retargets a `withTiming` from the value it is *currently* at, so an interrupted switch
+ * continues from mid-flight instead of snapping back to the previous index's geometry — which is
+ * the failure this whole construction exists to prevent, and the one place it is easy to get wrong
+ * (§D4's last caveat). Measured on a double tap 90ms apart: 0px.
  *
  * Reduced motion needs no code: withTiming defaults to ReduceMotion.System, and Reanimated reads
  * `prefers-reduced-motion` itself on web (ReducedMotion.js:8), so this falls back to an instant
@@ -181,42 +195,61 @@ function Slot({
     sw.value = withTiming(w, TIMING);
   }, [x, w, sx, sw]);
 
-  /** How expanded this slot is, 0…1. One value drives geometry, opacity and colour on one clock. */
-  const p = () => {
-    'worklet';
-    return interpolate(sw.value, [ICON, EXPANDED], [0, 1], Extrapolation.CLAMP);
-  };
+  /**
+   * How expanded this slot is, 0…1. One value drives geometry, opacity and colour on one clock.
+   *
+   * It has to be a derived SHARED VALUE, not a plain worklet helper called from each style.
+   * Reanimated builds a style's dependency list from the shared values it can see in that worklet's
+   * own body; a `sw.value` read hidden inside a nested function is not traced, so the badge and the
+   * label stopped re-evaluating on the animation's frames and only updated on the next React
+   * render — leaving them a whole switch behind (verified: the inactive tab kept the filled badge).
+   */
+  const pv = useDerivedValue(() => interpolate(sw.value, [ICON, EXPANDED], [0, 1], Extrapolation.CLAMP));
 
   const box = useAnimatedStyle(() => ({
-    transform: [{ translateX: sx.value - x }, { scaleX: sw.value / w }],
+    left: sx.value,
+    width: sw.value,
     // an interpolated colour, not a backgroundColor toggle: CSS cannot transition to `transparent`
     // smoothly and the instant flip was visible in the probe
-    backgroundColor: interpolateColor(p(), [0, 1], [c.navRest, c.navActive]),
+    backgroundColor: interpolateColor(pv.value, [0, 1], [c.navRest, c.navActive]),
   }));
-  // The slot is scaleX-ed in flight, so anything inside it would have its glyphs stretched. Both
-  // children carry the INVERSE scale and their own left-centre origin.
+  // Nothing is scaled, so nothing needs unscaling: the badge keeps its size and the label is simply
+  // revealed as the pill grows past it (the slot clips).
   const badge = useAnimatedStyle(() => ({
-    transform: [{ scaleX: w / sw.value }],
-    backgroundColor: interpolateColor(p(), [0, 1], [c.navRest, c.solid]),
+    backgroundColor: interpolateColor(pv.value, [0, 1], [c.navRest, c.solid]),
   }));
+  // The badge's fill is interpolated, so a hard switch on the glyph's colour leaves it the wrong
+  // colour for its backdrop for the whole flight — in light mode an ivory glyph on a still-pale
+  // badge simply disappears. Instead the same glyph is drawn twice and cross-faded on the same p:
+  // identical shapes in the same place, so it reads as the colour changing, not as two icons.
+  const restGlyph = useAnimatedStyle(() => ({ opacity: 1 - pv.value }));
+  const activeGlyph = useAnimatedStyle(() => ({ opacity: pv.value }));
   const text = useAnimatedStyle(() => ({
-    transform: [{ scaleX: w / sw.value }],
     // fade in over the back half of the flight, so the outgoing and incoming labels never sit at
     // half opacity together, which reads as a smudge
-    opacity: interpolate(p(), [0.45, 1], [0, 1], Extrapolation.CLAMP),
+    opacity: interpolate(pv.value, [0.45, 1], [0, 1], Extrapolation.CLAMP),
   }));
 
   return (
-    <Animated.View style={[styles.slot, { left: x, width: w }, box]}>
+    <Animated.View style={[styles.slot, box]}>
       <Pressable
         accessibilityRole="tab"
         accessibilityLabel={label}
+        // Both, and both are needed: react-native-web 0.21 emits role and aria-label from these but
+        // drops accessibilityState.selected on the floor (verified in the DOM), so the ARIA prop is
+        // passed explicitly for the web build. On native it is accessibilityState that is read.
         accessibilityState={{ selected }}
+        aria-selected={selected}
         onPress={onPress}
         // the press target is the whole slot, which is never narrower than ICON (48pt)
         style={styles.press}>
         <Animated.View style={[styles.badge, badge]}>
-          <Icon name={dest.icon} size={22} color={selected ? c.onSolid : c.muted} />
+          <Animated.View style={[styles.glyph, restGlyph]}>
+            <Icon name={dest.icon} size={22} color={c.muted} />
+          </Animated.View>
+          <Animated.View style={[styles.glyph, activeGlyph]}>
+            <Icon name={dest.icon} size={22} color={c.onSolid} />
+          </Animated.View>
         </Animated.View>
         <Animated.Text
           numberOfLines={1}
@@ -259,8 +292,7 @@ const styles = StyleSheet.create({
     top: PAD,
     height: ICON,
     borderRadius: ICON / 2,
-    overflow: 'hidden',
-    transformOrigin: 'left center',
+    overflow: 'hidden', // the label is revealed by the pill growing past it, never stretched
   },
   press: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   badge: {
@@ -271,15 +303,14 @@ const styles = StyleSheet.create({
     borderRadius: BADGE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    transformOrigin: 'left center',
   },
+  glyph: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   label: {
     position: 'absolute',
     left: (ICON - BADGE) / 2 + BADGE + 8,
     fontFamily: UI['700'],
     fontSize: 12,
     lineHeight: 16,
-    transformOrigin: 'left center',
   },
   fab: { width: FAB, height: FAB, borderRadius: FAB / 2, alignItems: 'center', justifyContent: 'center' },
 });

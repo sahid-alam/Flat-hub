@@ -127,7 +127,7 @@ test('expiry says the day in words and totals the rest without listing them', ()
   );
   assert.equal(
     morningSummary(facts({ expiring: [{ name: 'Dahi', daysLeft: 2 }, { name: 'Milk', daysLeft: 2 }] }))[0],
-    'The dahi needs using — in two days. one other thing needs using too.',
+    'The dahi needs using — in two days. One other thing needs using too.',
   );
 });
 

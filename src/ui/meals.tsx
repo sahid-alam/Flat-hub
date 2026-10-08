@@ -15,8 +15,47 @@ import { supabase } from '@/lib/supabase';
 import { sayError, today } from '@/lib/util';
 import { Block, ErrorText, Field, MagnetButton, T } from '@/ui/kit';
 
-const MEALS = ['lunch', 'dinner'] as const;
-type Meal = (typeof MEALS)[number];
+type Meal = 'lunch' | 'dinner';
+
+/**
+ * Write today's line. NOT a PostgREST upsert: that sends the whole row on the conflict path, and
+ * `date`, `meal` and `household_id` carry no UPDATE grant on purpose — a line is rewritten in
+ * place, never dragged onto another day. (Measured: the upsert returns "permission denied for
+ * table meal_plan".) So it updates the row the client already has, and inserts when there is none.
+ *
+ * The race — both planners writing the first line of the day at once — lands on the unique index
+ * and comes back 23505; the loser then rewrites in place, which is what "the last one to write
+ * wins" means anyway.
+ */
+async function write(
+  householdId: string,
+  date: string,
+  meal: Meal,
+  text: string,
+  by: string,
+  existingId: string | undefined,
+): Promise<void> {
+  const patch = { text, by, written_at: new Date().toISOString() };
+  if (existingId) {
+    const { error } = await supabase.from('meal_plan').update(patch).eq('id', existingId);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase
+    .from('meal_plan')
+    .insert({ id: newId(), household_id: householdId, date, meal, ...patch });
+  if (!error) return;
+  if (error.code !== '23505') throw error;
+  const { error: again } = await supabase
+    .from('meal_plan')
+    .update(patch)
+    .eq('household_id', householdId)
+    .eq('date', date)
+    .eq('meal', meal);
+  if (again) throw again;
+}
+
+const MEALS: Meal[] = ['lunch', 'dinner'];
 const Title = { lunch: 'Lunch', dinner: 'Dinner' } as const;
 
 export function MealsCard({ planners, youPlan }: { planners: string[]; youPlan: boolean }) {
@@ -49,20 +88,7 @@ export function MealsCard({ planners, youPlan }: { planners: string[]; youPlan: 
           meal={meal}
           row={mine(meal)}
           onSave={async (text) => {
-            const row = mine(meal);
-            const { error } = await supabase.from('meal_plan').upsert(
-              {
-                id: row?.id ?? newId(),
-                household_id: household.id,
-                date,
-                meal,
-                text,
-                by: me.id,
-                written_at: new Date().toISOString(),
-              },
-              { onConflict: 'household_id,date,meal' },
-            );
-            if (error) throw error;
+            await write(household.id, date, meal, text, me.id, mine(meal)?.id);
             await reload();
           }}
         />
