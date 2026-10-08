@@ -23,6 +23,7 @@ import { Block, ErrorText, Icon, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, T
 const AHEAD = 4; // today plus the next three days: an offer has to work on a duty due on Thursday
 const BACK = 1; // yesterday, so a missed duty is stated once and then left alone
 const OFFER_ICON = { ios: 'arrow.up.circle', android: 'arrow_upward' };
+const CAMERA = { ios: 'camera', android: 'photo_camera' };
 
 const shift = (date: string, days: number) => new Date(Date.parse(date) + days * 86_400_000).toISOString().slice(0, 10);
 const list = (names: string[]) =>
@@ -293,20 +294,15 @@ export default function Duties() {
           </T>
         )}
         {when !== 'future' && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Add a photo to ${r.duty.name}, ${dayLabel(r.date)}`}
-            disabled={busy === `${card}:photo`}
-            onPress={() => addPhoto(r, slot)}
-            style={({ pressed }) => [
-              { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
-              pressed && { opacity: 0.6 },
-            ]}>
-            <Icon name={{ ios: 'camera', android: 'photo_camera' }} size={16} color={c.muted} />
-            <T size={13} weight="600" soft>
-              {busy === `${card}:photo` ? 'Adding…' : 'Add a photo'}
-            </T>
-          </Pressable>
+          <View style={{ flexDirection: 'row' }}>
+            <Chip
+              label="Add a photo"
+              icon={CAMERA}
+              busy={busy === `${card}:photo`}
+              accessibilityLabel={`Add a photo to ${r.duty.name}, ${dayLabel(r.date)}`}
+              onPress={() => addPhoto(r, slot)}
+            />
+          </View>
         )}
         {toast?.card === card && <Toast message={toast.message} onUndo={toast.undo} style={{ marginTop: 2 }} />}
       </View>
@@ -320,28 +316,28 @@ export default function Duties() {
       (p) => p.duty_id === r.duty.id && p.due_on === r.date && p.member_id === slot.ownerId,
     );
     return (
-      <View key={card} style={{ gap: 2, paddingVertical: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View key={card}>
+        {/* The ROW is the control, in kit's list-row grammar with a trailing icon — five chunky
+            pills down a record of what nobody did turns a fact into an accusation. ≥56pt, so it
+            clears the 48pt target rule without raising its voice. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${r.duty.name}, ${first(slot.holderId) === 'you' ? 'your turn' : `${first(slot.holderId)}'s turn`}, missed. Add a photo`}
+          disabled={busy === `${card}:photo`}
+          onPress={() => addPhoto(r, slot)}
+          style={({ pressed }) => [
+            { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56 },
+            pressed && { opacity: 0.6 },
+          ]}>
           <T size={15} weight="600" style={{ flex: 1 }}>
             {r.duty.name}
           </T>
           <T size={14} soft>
-            {`${first(slot.holderId) === 'you' ? 'Yours' : `${first(slot.holderId)}’s`} · Missed`}
-          </T>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Add a photo to ${r.duty.name}, ${dayLabel(r.date)}`}
-          disabled={busy === `${card}:photo`}
-          onPress={() => addPhoto(r, slot)}
-          style={({ pressed }) => [{ minHeight: 36, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
-          <T size={13} weight="600" soft>
             {busy === `${card}:photo`
               ? 'Adding…'
-              : photos.length
-                ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} · add another`
-                : 'Add a photo'}
+              : `${first(slot.holderId) === 'you' ? 'Yours' : `${first(slot.holderId)}’s`} · Missed${photos.length ? ` · ${photos.length}` : ''}`}
           </T>
+          <Icon name={CAMERA} size={17} color={c.muted} />
         </Pressable>
         {toast?.card === card && <Toast message={toast.message} onUndo={toast.undo} />}
       </View>
@@ -555,9 +551,16 @@ function Ring({ state }: { state: 'yours' | 'theirs' | 'done' | 'missed' | 'offe
   );
 }
 
-/** A small action pill, 44pt. kit's MagnetButton is 56pt and full width; two of these share a row. */
+/**
+ * A small action pill. kit's MagnetButton is 56pt and full width; two or three of these share a row.
+ * Every control on this screen goes through here, so DESIGN.md rule 7 — targets of at least 48pt,
+ * and every button a pill — holds for Done, Offer, Take it, Vouch and the photo alike. A quiet one
+ * still carries a real `line` border (3:1+): nothing here is a bare text target pretending to be a
+ * button, which is what the old Skip and Swap were.
+ */
 function Chip({
   label,
+  icon,
   strong,
   accent,
   busy,
@@ -565,6 +568,7 @@ function Chip({
   onPress,
 }: {
   label: string;
+  icon?: { ios: string; android: string };
   strong?: boolean;
   accent?: boolean;
   busy?: boolean;
@@ -583,17 +587,20 @@ function Chip({
       onPress={onPress}
       style={({ pressed }) => [
         {
-          minHeight: 44,
+          minHeight: 48,
           paddingHorizontal: 16,
-          borderRadius: 22,
+          borderRadius: 24,
+          flexDirection: 'row',
+          gap: 7,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: fill,
-          borderWidth: strong || accent ? 0 : 1.5,
-          borderColor: c.line,
+          borderWidth: 1.5,
+          borderColor: strong || accent ? fill : c.line,
         },
         pressed && { transform: [{ scale: 0.97 }] },
       ]}>
+      {icon && <Icon name={icon} size={16} color={fg} />}
       <T size={14} weight="700" color={fg}>
         {busy ? 'Saving…' : label}
       </T>

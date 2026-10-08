@@ -272,16 +272,15 @@ export default function EditDuty() {
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel>The order</SectionLabel>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: reorder }}
-              accessibilityLabel={reorder ? 'Done reordering' : 'Edit the order'}
+            {/* A pill, not a bare word: DESIGN.md rule 7 wants 48pt and a real button. It is a
+                button that opens a mode, not a set toggle, so it keeps the button role. */}
+            <Day
+              label={reorder ? 'Done' : 'Edit'}
+              on={reorder}
               onPress={() => setReorder(!reorder)}
-              style={({ pressed }) => [{ minHeight: 44, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
-              <T size={14} weight="700">
-                {reorder ? 'Done' : 'Edit'}
-              </T>
-            </Pressable>
+              role="button"
+              a11yLabel={reorder ? 'Done reordering' : 'Edit the order'}
+            />
           </View>
           <Block style={{ gap: 0, paddingVertical: 4 }}>
             {inRoster.map((rid, i) => (
@@ -344,13 +343,25 @@ const swap = (xs: string[], a: number, b: number) => {
 };
 
 /** A toggle, 48pt. kit's Choice is single-select and both weekdays and the roster are sets. */
-function Day({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function Day({
+  label,
+  on,
+  onPress,
+  role = 'checkbox',
+  a11yLabel,
+}: {
+  label: string;
+  on: boolean;
+  onPress: () => void;
+  role?: 'checkbox' | 'button';
+  a11yLabel?: string;
+}) {
   const c = usePalette();
   return (
     <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: on }}
-      accessibilityLabel={label}
+      accessibilityRole={role}
+      accessibilityState={role === 'checkbox' ? { checked: on } : { expanded: on }}
+      accessibilityLabel={a11yLabel ?? label}
       onPress={onPress}
       style={({ pressed }) => [
         {
@@ -400,9 +411,9 @@ function Move({
       onPress={onPress}
       style={({ pressed }) => [
         {
-          width: 44,
-          height: 44,
-          borderRadius: 22,
+          width: 48,
+          height: 48,
+          borderRadius: 24,
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 1.5,
