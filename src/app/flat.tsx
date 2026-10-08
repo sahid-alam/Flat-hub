@@ -55,6 +55,14 @@ export default function Flat() {
           onPress={() => router.push('/statement')}
         />
         <Rule />
+        {/* The one door onto the permission prompt. It has to be a deliberate visit, because the
+            prompt may only come from a tap and a refusal cannot be asked again. */}
+        <Row
+          label="Notifications"
+          icon={{ ios: 'bell', android: 'notifications' }}
+          onPress={() => router.push('/notifications')}
+        />
+        <Rule />
         <Row
           label="Record a top-up"
           icon={{ ios: 'indianrupeesign', android: 'currency_rupee' }}

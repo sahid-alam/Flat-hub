@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { ChoreEvent, Duty } from '@/domain/duties';
 import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
+import { refresh as refreshPush } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
 
 export type Household = {
@@ -176,12 +177,27 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
   // Tabs stay mounted, so useFocusEffect never fires when the flat reopens a backgrounded
   // Home Screen install — that resume is the stale-data case the focus reloads cannot see.
+  // It is also the one moment a lost push subscription can be noticed: iOS drops it with no event
+  // (https://developer.apple.com/forums/thread/728796), so every open re-reads and re-subscribes.
+  // refreshPush never prompts and swallows its own failures, so a broken push_subscription table
+  // degrades notifications and leaves the kitty alone.
+  const householdId = data?.household.id;
+  const memberId = data?.me.id;
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const onShow = () => document.visibilityState === 'visible' && void reload();
+    const onShow = () => {
+      if (document.visibilityState !== 'visible') return;
+      void reload();
+      if (householdId && memberId) void refreshPush(householdId, memberId);
+    };
     document.addEventListener('visibilitychange', onShow);
     return () => document.removeEventListener('visibilitychange', onShow);
-  }, [reload]);
+  }, [reload, householdId, memberId]);
+
+  // And on the first open, which fires no visibilitychange at all.
+  useEffect(() => {
+    if (householdId && memberId) void refreshPush(householdId, memberId);
+  }, [householdId, memberId]);
 
   const books = useMemo<Books | null>(
     () =>

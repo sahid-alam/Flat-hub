@@ -56,6 +56,7 @@ function Routes() {
         <Stack.Screen name="statement/[month]" options={{ title: 'Statement' }} />
         <Stack.Screen name="mates" options={{ title: 'Mates' }} />
         <Stack.Screen name="favourites" options={{ title: 'Favourites' }} />
+        <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
         <Stack.Screen name="stock" options={{ headerShown: false }} />
         <Stack.Screen name="fridge" options={{ headerShown: false }} />
         <Stack.Screen name="shopping" options={{ headerShown: false }} />
