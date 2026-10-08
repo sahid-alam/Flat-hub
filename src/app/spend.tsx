@@ -3,13 +3,13 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { exactProduct } from '@/domain/extraction';
-import { linesBalance } from '@/domain/kitty';
+import { isApp, linesBalance } from '@/domain/kitty';
 import { formatINR, parseRupees } from '@/domain/money';
 import { useHousehold, type SpendRow } from '@/lib/books';
 import { sayError } from '@/lib/util';
 import { newId } from '@/lib/id';
 import { supabase } from '@/lib/supabase';
-import { AmountBlock, BalanceBar, roundingLine } from '@/ui/capture';
+import { AmountBlock, BalanceBar, roundingLine, SourceRow } from '@/ui/capture';
 import { Block, Choice, ErrorText, Field, Icon, MagnetButton, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 import { usePutAway } from '@/ui/putaway';
 
@@ -58,7 +58,7 @@ export default function AddSpend() {
         id,
         household_id: household.id,
         source,
-        store_name: store.trim() || null,
+        store_name: isApp(source) ? null : store.trim() || null, // an app names its own store
         paid_by: paidBy,
         paid_from: paidFrom,
         total_paise: total,
@@ -105,21 +105,9 @@ export default function AddSpend() {
         )}
       </View>
 
-      <View style={{ gap: 8 }}>
-        <SectionLabel>Where from</SectionLabel>
-        <Choice
-          value={source}
-          onChange={setSource}
-          options={[
-            { value: 'local', label: 'Local' },
-            { value: 'zepto', label: 'Zepto' },
-            { value: 'other', label: 'Other' },
-          ]}
-        />
-      </View>
-      {source !== 'zepto' && (
-        <Field label="Store (optional)" value={store} onChangeText={setStore} placeholder="Sharma Dairy" />
-      )}
+      {/* Seven sources would be seven chips here, which is the grid the owner didn't like. Same row
+          as /import, minus the "read off the bill" — nothing read anything on this screen. */}
+      <SourceRow source={source} store={store} onChange={setSource} onChangeStore={setStore} />
 
       <Block>
         <SectionLabel>Lines · optional</SectionLabel>

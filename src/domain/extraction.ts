@@ -93,6 +93,23 @@ export function normalizeExtraction(raw: unknown): { extraction: Extraction | nu
   return { extraction: { source, store_name: text(raw.store_name), total_paise: total, occurred_on, lines }, problems };
 }
 
+/**
+ * The flat's share of a bill, once a mate's own lines are taken off it. The ₹480 of chips that rode
+ * on the flat's ₹1,180 Blinkit order leaves both the lines AND the total, so the saved spend is the
+ * ₹700 the flat actually owes and the kitty never sees the chips. The full bill is still kept, raw,
+ * on `spend.extraction`.
+ *
+ * Invariant 1 survives: a bill whose lines summed to its total still balances afterwards, because
+ * the same amount comes off both sides.
+ */
+export function flatShare<L extends { line_total_paise: number; mine?: boolean }>(
+  totalPaise: number,
+  lines: L[],
+): { total_paise: number; lines: L[] } {
+  const mine = sum(lines.filter((l) => l.mine).map((l) => l.line_total_paise));
+  return { total_paise: totalPaise - mine, lines: lines.filter((l) => !l.mine) };
+}
+
 export type ProductLike = { id: string; name: string; aliases: string[] };
 
 /** Lowercase words only, with pack sizes dropped: "Amul Butter (500 g) x2" → "amul butter". */

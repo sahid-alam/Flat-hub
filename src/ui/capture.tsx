@@ -1,10 +1,12 @@
 // Shared pieces of the capture sheets (/spend, /topup, /import): the big amount entry, the lines balance bar
 // and the skeleton shown while an order is being read.
-import type { ReactNode } from 'react';
-import { TextInput, View, type TextInputProps } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Modal, Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isApp, SOURCE_LABEL, SOURCES, type Source } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
-import { Block, DISPLAY, Icon, MagnetButton, SectionLabel, T, focusRing, usePalette, useInk } from '@/ui/kit';
+import { Block, DISPLAY, Field, Icon, MagnetButton, Row, Rule, SectionLabel, T, focusRing, usePalette, useInk } from '@/ui/kit';
 
 /** The amount as a giant Bricolage entry on a stone block: small top-aligned ₹, onyx underline so it reads as a field. */
 export function HeroInput({ label, ...props }: TextInputProps & { label: string }) {
@@ -47,6 +49,92 @@ export function AmountBlock(props: TextInputProps & { label: string }) {
     <Block tone="stone" style={{ paddingTop: 18, paddingBottom: 18 }}>
       <HeroInput {...props} />
     </Block>
+  );
+}
+
+/**
+ * Where a spend came from, as one line and not a grid of chips. There are seven sources now — five
+ * apps, a shop, and other — and the owner's note on the chip grid was "here is what I didn't like
+ * how we are showing the options of 'where from'", so the answer is removal. The extractor already
+ * reads the store off the bill, so this states what it found and gets out of the way; the picker
+ * sits behind a tap rather than on screen.
+ * ponytail: the same scrim-and-lip shape as the Add sheet and the fridge's lot sheet. That is three
+ * copies, so a shared <Sheet> is now worth extracting — in kit, which this branch doesn't own.
+ */
+export function SourceRow({
+  source,
+  store,
+  onChange,
+  onChangeStore,
+  detected,
+}: {
+  source: Source;
+  store: string;
+  onChange: (s: Source) => void;
+  onChangeStore: (s: string) => void;
+  /** The reader picked this off the bill, so the row says so: it is a confirm line, not a question. */
+  detected?: boolean;
+}) {
+  const c = usePalette();
+  const insets = useSafeAreaInsets();
+  const [open, setOpen] = useState(false);
+  // An app order names its own store; only a shop bill has a name worth typing in.
+  const title = [SOURCE_LABEL[source], isApp(source) ? null : store.trim()].filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: 8 }}>
+      <SectionLabel>Where from</SectionLabel>
+      <Block style={{ gap: 0, paddingVertical: 4 }}>
+        <Row
+          label={title}
+          icon={{ ios: 'storefront', android: 'storefront' }}
+          detail={detected ? 'read off the bill' : 'tap to change'}
+          onPress={() => setOpen(true)}
+        />
+      </Block>
+      {!isApp(source) && (
+        <Field label="Store (optional)" value={store} onChangeText={onChangeStore} placeholder="Sharma Dairy" />
+      )}
+
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          {/* The backdrop is the sheet's sibling, never its parent: as a wrapper it makes every row
+              a <button> inside a <button>. Esc still closes through onRequestClose. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            onPress={() => setOpen(false)}
+            style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }]}
+          />
+          <View
+            role="dialog"
+            accessibilityLabel="Where from"
+            style={{ backgroundColor: c.ground, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 8 }}>
+            <View style={{ alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.line }} />
+            <View style={{ padding: 16, paddingBottom: insets.bottom + 16, gap: 12 }}>
+              <Block style={{ gap: 0, paddingVertical: 4 }}>
+                {SOURCES.map((s, i) => (
+                  <View key={s}>
+                    {i > 0 && <Rule />}
+                    <Row
+                      label={SOURCE_LABEL[s]}
+                      detail={
+                        s === source ? (
+                          <Icon name={{ ios: 'checkmark', android: 'check' }} size={18} color={c.accentText} />
+                        ) : undefined
+                      }
+                      onPress={() => {
+                        onChange(s);
+                        setOpen(false);
+                      }}
+                    />
+                  </View>
+                ))}
+              </Block>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
