@@ -34,6 +34,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false, // every tab screen draws its own pinned header
+        // react-navigation defaults tab animation to 'none' with no platform guard, so the APK did not
+        // animate either. 'shift' fades the outgoing scene out with a -50px slide and the incoming one in.
+        animation: 'shift',
         // Every tab draws its own pinned header instead of a nav header, so the top inset has to
         // come from here: public/index.html ships viewport-fit=cover, so on a notched iPhone in
         // Home Screen mode the document starts under the status bar and the titles sat behind the
