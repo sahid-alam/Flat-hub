@@ -6,7 +6,7 @@ import {
   Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope';
 import { Righteous_400Regular } from '@expo-google-fonts/righteous';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider, router } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -16,6 +16,7 @@ import { Pressable, useColorScheme } from 'react-native';
 import { BooksProvider, useBooks } from '@/lib/books';
 import '@/lib/invite'; // captures an invite code from the opening URL before the auth redirect
 import { Icon, UI, usePalette } from '@/ui/kit';
+import { Stack } from '@/ui/stack'; // platform split: native stack on the APK, the JS card stack on web, so screens animate at all
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +39,9 @@ function Routes() {
         headerBackButtonDisplayMode: 'minimal',
         headerLeft: Back, // every pushed screen, not just duties/manage: see Back below
         contentStyle: { backgroundColor: c.ground },
+        // The push. On web `presentation: 'modal'` is a no-op, so the modal screens below name
+        // slide_from_bottom themselves; on native the presentation still does the work.
+        animation: 'slide_from_right',
       }}>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
@@ -47,9 +51,11 @@ function Routes() {
       </Stack.Protected>
       <Stack.Protected guard={!!data}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="flat" options={{ presentation: 'modal', title: 'The flat' }} />
-        <Stack.Screen name="spend" options={{ presentation: 'modal', title: 'Add a spend' }} />
-        <Stack.Screen name="topup" options={{ presentation: 'modal', title: 'Record a top-up' }} />
+        {/* the kitty ledger: off the tab bar in V3, reached from Home's brass tile */}
+        <Stack.Screen name="kitty" options={{ title: 'The kitty' }} />
+        <Stack.Screen name="flat" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'The flat' }} />
+        <Stack.Screen name="spend" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Add a spend' }} />
+        <Stack.Screen name="topup" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Record a top-up' }} />
         <Stack.Screen name="away" options={{ title: 'Away' }} />
         <Stack.Screen name="reimburse" options={{ title: 'To reimburse' }} />
         <Stack.Screen name="bills" options={{ title: 'Bills' }} />
@@ -64,7 +70,7 @@ function Routes() {
         <Stack.Screen name="shopping" options={{ headerShown: false }} />
         {/* /fridge /shopping /stock are Redirects into the Kitchen tab: no header on the way through. */}
         <Stack.Screen name="duties/manage" options={{ title: 'Manage duties' }} />
-        <Stack.Screen name="import" options={{ presentation: 'modal', title: 'Read a bill' }} />
+        <Stack.Screen name="import" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Read a bill' }} />
       </Stack.Protected>
     </Stack>
   );
@@ -72,13 +78,13 @@ function Routes() {
 
 /** The web build is deep-linkable, and every screen outside `(tabs)` sits outside the tab bar: a
  *  statement link pasted into the flat's WhatsApp group, opened cold from a Home Screen install,
- *  has no history, no tab bar and no browser chrome — without this there is no way back to the
- *  Kitty. It is the whole Stack's headerLeft, so one cold deep link can never strand anyone. */
+ *  has no history, no tab bar and no browser chrome — without this there is no way back to Home.
+ *  It is the whole Stack's headerLeft, so one cold deep link can never strand anyone. */
 function Back() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={router.canGoBack() ? 'Back' : 'Kitty'}
+      accessibilityLabel={router.canGoBack() ? 'Back' : 'Home'}
       onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
       style={({ pressed }) => [
         { minHeight: 48, minWidth: 48, justifyContent: 'center' },

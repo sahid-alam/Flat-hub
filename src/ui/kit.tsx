@@ -139,9 +139,11 @@ export function useInk(): Ink {
 
 // ---------------------------------------------------------------- layout
 
-/** The tab bar's own height. `Screen` adds the bottom safe-area inset itself, so a tab screen passes
- *  exactly this as `padBottom` — the bar is absolute, and 56 + inset is its full height. */
-export const TAB_BAR = 56;
+/** What a tab screen must leave clear at the bottom: the floating capsule's 60pt plus the 12pt it
+ *  floats above the safe area (rule 8 — the nav must never cover content). `Screen` adds the bottom
+ *  safe-area inset itself. Kept as TAB_BAR because every tab screen already passes it as `padBottom`;
+ *  the one source of truth is NAV_HEIGHT in src/ui/navbar.tsx, which this must equal. */
+export const TAB_BAR = 72;
 
 export function Screen({
   children,
@@ -553,7 +555,7 @@ function MonthName({ name, size }: { name: string; size: number }) {
 
 // ---------------------------------------------------------------- controls
 
-type IconName = { ios: string; android: string; web?: string };
+export type IconName = { ios: string; android: string; web?: string };
 export function Icon({ name, size = 22, color }: { name: IconName; size?: number; color?: string }) {
   const ink = useInk();
   return (

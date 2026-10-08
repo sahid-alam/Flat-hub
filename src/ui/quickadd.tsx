@@ -10,13 +10,24 @@ import { newId } from '@/lib/id';
 import { landed, supabase } from '@/lib/supabase';
 import { sayError } from '@/lib/util';
 import { reverseSpend } from '@/ui/activity';
+import { Strip } from '@/ui/home';
 import { Block, Choice, ErrorText, Field, MagnetButton, Row, Rule, SectionLabel, T, Tile, Toast } from '@/ui/kit';
 
 const rupees = (paise: number | null) => (paise ? upiAmount(paise).replace(/\.00$/, '') : '');
 
+const STRIP_TILE = 136;
+const Pinned = ({ children }: { children: React.ReactNode }) => (
+  <View style={{ width: STRIP_TILE }}>{children}</View>
+);
+
 type Logged = { spend: Parameters<typeof reverseSpend>[0]; name: string; undone?: boolean };
 
-export function QuickAdd() {
+/**
+ * `compact` is Home's version: one horizontally scrolling row of tiles, no card around it and no
+ * import row — the owner asked for Quick add to stay but stop taking the best space on the screen.
+ * The kitty ledger keeps the full card.
+ */
+export function QuickAdd({ compact }: { compact?: boolean } = {}) {
   const { products, household, reload } = useHousehold();
   const [picked, setPicked] = useState<ProductRow | null>(null);
   const [logged, setLogged] = useState<Logged | null>(null);
@@ -42,6 +53,67 @@ export function QuickAdd() {
     }
   }
 
+  // The tiles are the same tiles; only the container differs. The confirm form and the toast sit
+  // below the strip rather than inside it, so a horizontal scroller never swallows a text field.
+  const tiles = favourites.map((p) => (
+    <Tile
+      key={p.id}
+      title={p.name}
+      detail={p.default_price_paise ? formatINR(p.default_price_paise) : 'set price'}
+      on={picked?.id === p.id}
+      onPress={() => {
+        setLogged(null);
+        setPicked(picked?.id === p.id ? null : p);
+      }}
+    />
+  ));
+
+  if (compact)
+    return (
+      <View style={{ gap: 12 }}>
+        <Strip>
+          {/* Tile is flexGrow:1, which fills a horizontal scroller end to end, so each one is pinned
+              to a fixed width here. Two and a bit are visible at 390pt, which is the point of a strip. */}
+          {favourites.length === 0 ? (
+            <Pinned>
+              <Tile title="Pick favourites" detail="milk, atta, eggs" onPress={() => router.push('/favourites')} />
+            </Pinned>
+          ) : (
+            <>
+              {tiles.map((t) => (
+                <Pinned key={t.key}>{t}</Pinned>
+              ))}
+              <Pinned>
+                <Tile title="More" detail="edit the list" onPress={() => router.push('/favourites')} />
+              </Pinned>
+            </>
+          )}
+        </Strip>
+        {picked && (
+          <Confirm
+            key={picked.id}
+            product={picked}
+            onDone={(spend) => {
+              setPicked(null);
+              setUndoError(null);
+              setLogged({ spend, name: picked.name });
+            }}
+          />
+        )}
+        {logged && (
+          <Toast
+            message={
+              logged.undone
+                ? `${logged.name} ${formatINR(logged.spend.total_paise)} reversed`
+                : `${logged.name} ${formatINR(logged.spend.total_paise)} logged`
+            }
+            onUndo={logged.undone ? undefined : undo}
+          />
+        )}
+        <ErrorText error={undoError} />
+      </View>
+    );
+
   return (
     <Block>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: -4 }}>
@@ -58,20 +130,7 @@ export function QuickAdd() {
       {favourites.length === 0 ? (
         <T soft>Star the things you buy every week (milk, bread, eggs) and they show up here for a two-tap spend.</T>
       ) : (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {favourites.map((p) => (
-            <Tile
-              key={p.id}
-              title={p.name}
-              detail={p.default_price_paise ? formatINR(p.default_price_paise) : 'set price'}
-              on={picked?.id === p.id}
-              onPress={() => {
-                setLogged(null);
-                setPicked(picked?.id === p.id ? null : p);
-              }}
-            />
-          ))}
-        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{tiles}</View>
       )}
       {picked && (
         <Confirm
