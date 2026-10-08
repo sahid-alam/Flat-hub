@@ -122,7 +122,10 @@ export default function Duties() {
     };
     await run(key, async () => {
       await insertOnce('chore_event', { id, ...row });
-      pending.current.delete(key); // only once it is visible: before that, the id must stand
+      // The insert landed, so the id has done its job. The reload runs after this, so a reload that
+      // fails leaves the id forgotten and a retry mints a new one — one extra row in the ledger,
+      // never double points: donePoints settles per slot and the slot's key is the mate.
+      pending.current.delete(key);
       setToast({
         card,
         message,
@@ -196,7 +199,9 @@ export default function Duties() {
           {yours ? 'You did it' : `${who.split(' ')[0]} did it`}
           {vouched.length > 0 && ` · vouched by ${list(vouched.map(first))}`}
         </T>
-        {!yours && !vouched.includes(me.id) && (
+        {/* A vouch is keyed to the slot's OWNER, so the mate who offered a slot cannot vouch for the
+            mate who took it — the db refuses it. Hide the pill rather than show a tap that fails. */}
+        {!yours && slot.ownerId !== me.id && !vouched.includes(me.id) && (
           <Chip
             label="Vouch"
             busy={busy === `${card}:vouch`}
