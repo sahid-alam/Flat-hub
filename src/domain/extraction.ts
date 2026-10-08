@@ -1,7 +1,7 @@
 // Receipt / Zepto extraction: clean up what the LLM returned, and match lines to products.
 // Pure TypeScript: no React, no Supabase. Money is integer paise.
 
-import { linesBalance } from './kitty.ts';
+import { linesBalance, SOURCES, type Source } from './kitty.ts';
 import { formatINR, parseRupees } from './money.ts';
 
 export type ExtractedLine = {
@@ -12,7 +12,7 @@ export type ExtractedLine = {
   kind: 'item' | 'fee' | 'discount';
 };
 export type Extraction = {
-  source: 'zepto' | 'local' | 'other';
+  source: Source;
   store_name: string | null;
   total_paise: number;
   occurred_on: string | null;
@@ -20,7 +20,6 @@ export type Extraction = {
 };
 
 const KINDS = ['item', 'fee', 'discount'] as const;
-const SOURCES = ['zepto', 'local', 'other'] as const;
 const LABEL = { item: 'Item', fee: 'Fee', discount: 'Discount' } as const;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
