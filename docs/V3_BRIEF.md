@@ -95,3 +95,53 @@ figures, 2-up tiles, streak and dot-matrix grids.
 
 Product metadata gets built properly (category, min_qty, base unit) plus a seed of the real basket;
 guests add a share; a second pot for bills; per-lot fridge logging stays. See `docs/AUDIT.md`.
+
+---
+
+# Round 2 — after reviewing the concept (8 Oct 2026)
+
+Thirteen items from his walkthrough of `docs/design/concept.html`, plus two annotated screenshots.
+
+## Corrections to what we drew
+
+| # | What he said | What changes |
+|---|---|---|
+| R1 | **"I honestly didn't like the structure and ui of the add duties things"** | Manage opens on the **list of duties**; tapping one edits it; a separate **Add duty** button creates a new one. The form itself gets reworked, not restyled. |
+| R2 | **"what I meant by two people is that one duty will be fulfilled by two people. e.g., Adnan and me one day, Ayan and Ansh the other day"** | We drew alternating owners. Wrong. Co-assignees do it **together, the same day**. See the model below. |
+| R3 | **"what I didn't like how we are showing the options of 'where from'"** | The store chip grid goes away entirely. The extractor already detects the store, so it becomes a confirm line — "Blinkit · tap to change". |
+| R4 | **"no need to show the kitty money this big"** | The big card becomes the AI summary. The kitty figure becomes a tile beside Position and Duty Points — still the tap-through to the ledger. **Conflicts with nav Option A; needs his yes.** |
+| R5 | **"the animation should look like coming from the + icon/button"** | The + sheet scales out of the + circle (transform-origin on the button). Applies to the V3.1 FLIP work too. |
+| R6 | **"separate section for fridge"** | The fridge becomes its own destination, not a group inside Kitchen. |
+| R7 | **"need dark mode"** | The concept was light only. Both modes from here. |
+
+## New features
+
+| # | What | Notes |
+|---|---|---|
+| R8 | **Photo evidence on a duty** — "if someone didnt do his duty correctly" | Attached to a duty instance. Storage decided in `docs/PHOTOS_SCAN_AI.md`. |
+| R9 | **Receipt photos kept** — "so that we have the records" | `spend.receipt_path` exists and has never been written. |
+| R10 | **Barcode scanning** — "so we dont need to write the name n quantity again" | Only as good as the product data behind it; see the hit-rate test in `PHOTOS_SCAN_AI.md`. |
+| R11 | **The cook, and meals** | Whoever has dishes also tells the cook what to make for lunch and dinner, and orders what is missing. He must be reminded to **declare the plan**, and it shows on everyone's home. |
+| R12 | **Moving out** — a real screen | `AUDIT.md` M3: pick the date, confirm, show the frozen final position. Nothing writes `member.left_on` today. |
+| R13 | **"proper notifications for everything"** | See `docs/NOTIFICATIONS.md`. |
+
+## Models settled with the advisor
+
+**Guests** — a guest is an absence with the sign flipped, attributed to the host. A `guest` row is
+`(household_id, host_member_id, from, to, label?)`, and each guest-night adds **one person-day** to the
+host's weight in `presenceWeights` (kitty.ts:71). `allocate()` is untouched and the pool still balances —
+the host simply carries more. Guest writes must go through the **same** closed-month trigger as
+absences (`private.check_absence_closed()` in `20261004154135_m5_close_guards.sql`), not a copy of it.
+Tests: `linesBalance` holds with a guest present, and a guest logged in an open month cannot move a
+closed month's shares.
+
+**Two-person duties** — add `group_size` to the duty. The rota is a sliding window of `group_size` over
+the existing rotation: six members at size 2 gives (Adnan, Anant)(Ansh, Ayan)(Jatin, Sahid). `assignee()`
+becomes `assignees()`. **`chore_event` does not change** — each co-assignee ticks their own row and earns
+the points individually, so "only the assignee ticks" still holds per person, Missed is per person,
+Offer/Claim is per slot, and your partner is the natural voucher. `fairSharePoints` must account for
+`group_size` or expected points come out wrong for pairs.
+
+**Meals** — a role, not a chore name: `plans_meals: boolean` on the duty, so who declares today is
+derived from `assignees()`, never matched by the string "dishes". A small `meal_plan` table
+`(household_id, date, meal: lunch|dinner, text, by)` — this is not a ledger, so UPDATE is fine.
