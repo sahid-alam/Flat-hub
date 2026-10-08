@@ -92,6 +92,13 @@ async function dutyDueToday(db: SupabaseClient, today: string): Promise<Recipien
     db.from('member').select('id, household_id, joined_on, left_on'),
     db.from('member_absence').select('member_id, household_id, from_date, to_date'),
     // The rota only ever looks backwards from `due_on`, so there is no reason to read the future.
+    // ponytail: PostgREST caps this at max_rows = 1000 (supabase/config.toml, and the same on the
+    // hosted project). assignee() computes each mate's fair-share deficit over EVERY event since
+    // the anchor, so once the flat has ~1000 chore events — six mates, a few duties a day, inside
+    // a year — this returns an arbitrary 1000 of them and the deficit is computed on a partial
+    // ledger. The push would then name a mate the Duties tab does not. src/lib/books.tsx has the
+    // same ceiling and its own note, but truncates differently, so the two would disagree rather
+    // than fail together. Fix: page with .range() until a short page comes back, in both places.
     db.from('chore_event').select('*').lte('due_on', today),
   ]);
   for (const r of [duties, members, absences, events]) if (r.error) throw r.error;

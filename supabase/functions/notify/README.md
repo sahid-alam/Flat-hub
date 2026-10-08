@@ -131,6 +131,21 @@ does.
    missing row or any error at all means `sound`, the default: notifications must work before the
    settings screen exists and must never crash because of it.
 
+   The shape was proposed to `v3/b5-profile` on 2026-10-08 and is **not yet confirmed**. Only three
+   names matter here — `member_id`, `trigger`, `mode` (`'sound' | 'silent' | 'off'`) — on a table
+   called `notification_pref`. If theirs differs, `prefs()` in `index.ts` is the only thing to
+   change, and until then its absence reads as "everything on".
+
+## Known ceiling
+
+`dutyDueToday()` reads `chore_event` in one PostgREST request, which is capped at
+`max_rows = 1000`. The rota computes each mate's fair-share deficit over every event since the
+anchor, so at roughly a year of history the query starts returning an arbitrary 1000 rows and the
+deficit is computed on a partial ledger — the push would name a mate the Duties tab does not.
+`src/lib/books.tsx` has the same ceiling and its own note, but truncates differently, so the two
+would quietly disagree rather than fail together. The fix is a `.range()` loop until a short page
+comes back, in both places. **Not urgent, but it is the first thing to fix after this merges.**
+
 ## The empty slots
 
 Each one is a branch here plus a line in the migration. The migration's footer lists them with the
