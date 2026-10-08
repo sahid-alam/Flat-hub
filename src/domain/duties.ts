@@ -15,7 +15,7 @@
 //     event); another mate claims it, and the claim is the 'swapped' event this file already reads.
 //     Nobody is ever given a duty without tapping to take it, and an unclaimed offer is missed.
 
-import type { Member, Absence } from './kitty.ts';
+import { istDate, type Member, type Absence } from './kitty.ts';
 
 export type Duty = {
   id: string;
@@ -304,6 +304,45 @@ export function rota(
     }
   }
   return out;
+}
+
+/** A duty as the database stores it. `created_at` is the rota's anchor: a duty is never due before it existed. */
+export type DatedDuty = Duty & { created_at: string };
+
+/**
+ * Today's still-open slots, grouped by whoever has to tick one. This is the recipient list for the
+ * "your duty is due today" notification (docs/NOTIFICATIONS.md #1), and it is the same list the
+ * Duties tab draws — which is the whole point of it living here. The anchor is derived inside, the
+ * way src/ui/duties.tsx derives it, so a push can never name a different mate than the screen does.
+ *
+ * The HOLDER is notified, not the owner: on a claimed slot that is the mate who took it, and on an
+ * offered-but-unclaimed one it is still its owner, because an open offer hands the duty to nobody.
+ *
+ * `today` is an IST date (`istDate()`), not a UTC one: the 08:00 IST cron must ask about the day the
+ * flat is actually in. One entry per mate, never one per duty — two duties on the same day are one
+ * push naming both, because a second push would only collapse the first by tag. A mate holding both
+ * halves of a pair duty is named once.
+ */
+export function dueToday(
+  duties: DatedDuty[],
+  members: Member[],
+  absences: Absence[],
+  events: ChoreEvent[],
+  today: string,
+): { memberId: string; dutyNames: string[] }[] {
+  const anchor = duties.reduce((a, d) => (istDate(d.created_at) < a ? istDate(d.created_at) : a), today);
+  const byMember = new Map<string, string[]>();
+  for (const r of rota(duties, members, absences, events, today, 1, anchor))
+    for (const slot of r.slots) {
+      // A ticked slot needs no reminder. Everything else today is still somebody's to do.
+      if (slot.done) continue;
+      const names = byMember.get(slot.holderId) ?? [];
+      if (!names.includes(r.duty.name)) names.push(r.duty.name);
+      byMember.set(slot.holderId, names);
+    }
+  return [...byMember]
+    .map(([memberId, dutyNames]) => ({ memberId, dutyNames }))
+    .sort((a, b) => (a.memberId < b.memberId ? -1 : 1));
 }
 
 /** Done vs fair share for everyone. Sorted by member id, never by score: this is not a leaderboard. */

@@ -99,14 +99,23 @@ export default function Home() {
     isTreasurer && owedOutTotal > 0 ? 'payback' : owedToMe > 0 ? 'getback' : putInThisMonth === 0 && topup > 0 ? 'topup' : null;
 
   // ---------------------------------------------------------------- today in the flat
-  const myToday = todays.filter((r) => r.memberId === me.id);
-  const todayDuties: TodayDuty[] = todays.map((r) => ({
-    key: `${r.duty.id}|${r.date}`,
-    name: r.duty.name,
-    who: r.memberId === me.id ? 'Your turn' : r.memberId ? first(name(r.memberId)) : 'Nobody free',
-    mine: r.memberId === me.id,
-    done: r.outcome === 'done',
-  }));
+  // One row per SLOT, not per instance: a duty can be held by two or three mates the same day, each
+  // ticking their own half. `holderId` is whoever must tick it now — the mate who claimed an offer,
+  // or, when nobody claimed, its owner.
+  const slots = todays.flatMap((r) => r.slots.map((s) => ({ date: r.date, duty: r.duty, ...s })));
+  const myToday = slots.filter((s) => s.holderId === me.id);
+  const todayDuties: TodayDuty[] = todays.flatMap((r) =>
+    r.slots.length
+      ? r.slots.map((s) => ({
+          key: `${r.duty.id}|${r.date}|${s.holderId}`,
+          name: r.duty.name,
+          who: s.holderId === me.id ? 'Your turn' : first(name(s.holderId)),
+          mine: s.holderId === me.id,
+          done: s.done,
+        }))
+      : // everyone away, or nobody in the duty's roster: the tile still says the duty is due
+        [{ key: `${r.duty.id}|${r.date}`, name: r.duty.name, who: 'Nobody free', mine: false, done: false }],
+  );
 
   const nowIso = new Date().toISOString();
   const productName = (id: string | null) => products.find((p) => p.id === id)?.name ?? 'Something';
@@ -124,17 +133,18 @@ export default function Home() {
   });
 
   // Yesterday's open instances, as a COUNT — the summary never names whose they were.
-  const missedYesterday = rota(duties, members, absences, choreEvents, shiftDay(now, -1), 1, anchor).filter(
-    (r) => r.outcome === null || r.outcome === 'swapped',
-  ).length;
+  // `now` as the last argument is what keeps a missed slot missed: it earns no provisional credit.
+  const missedYesterday = rota(duties, members, absences, choreEvents, shiftDay(now, -1), 1, anchor, now)
+    .flatMap((r) => r.slots)
+    .filter((s) => !s.done).length;
 
   // ---------------------------------------------------------------- meals
   // The flag, never the name: a flat that renames "Dishes" keeps its meal planner. rota() hands back
   // the engine's `Duty`, which has no UI flags on it, so the row is looked up by id instead.
   const plansMeals = new Set(duties.filter((d) => d.plans_meals).map((d) => d.id));
-  const mealRows = todays.filter((r) => plansMeals.has(r.duty.id) && r.memberId);
-  const youPlanMeals = mealRows.some((r) => r.memberId === me.id);
-  const planners = [...new Set(mealRows.map((r) => first(name(r.memberId!))))];
+  const mealRows = slots.filter((s) => plansMeals.has(s.duty.id));
+  const youPlanMeals = mealRows.some((s) => s.holderId === me.id);
+  const planners = [...new Set(mealRows.map((s) => first(name(s.holderId))))];
 
   // ---------------------------------------------------------------- the summary
   const current = members.filter((m) => !m.left_on || m.left_on.slice(0, 7) >= month);
@@ -145,18 +155,18 @@ export default function Home() {
     spentThisMonthPaise: periodTotal(spends, [month]),
     daysElapsed: Number(now.slice(8, 10)),
     poolPaise: pool,
-    yourDutiesToday: myToday.map((r) => r.duty.name.toLowerCase()),
-    // Co-assignment lands in B4; until then one instance has one assignee, so this is empty.
+    yourDutiesToday: [...new Set(myToday.map((s) => s.duty.name.toLowerCase()))],
+    // B4's co-assignment makes this real: the other holders of a duty you are also on today.
     withYouToday: [
       ...new Set(
-        todays
-          .filter((r) => r.memberId !== me.id && myToday.some((o) => o.duty.id === r.duty.id && o.date === r.date))
-          .map((r) => first(name(r.memberId!))),
+        slots
+          .filter((s) => s.holderId !== me.id && myToday.some((o) => o.duty.id === s.duty.id && o.date === s.date))
+          .map((s) => first(name(s.holderId))),
       ),
     ],
-    othersDutiesToday: todays
-      .filter((r) => r.memberId && r.memberId !== me.id)
-      .map((r) => ({ duty: r.duty.name.toLowerCase(), who: first(name(r.memberId!)) })),
+    othersDutiesToday: slots
+      .filter((s) => s.holderId !== me.id)
+      .map((s) => ({ duty: s.duty.name.toLowerCase(), who: first(name(s.holderId)) })),
     youPlanMeals,
     expiring: soon.map((l) => ({ name: productName(l.product_id), daysLeft: daysLeft(l.expiry_date, nowIso) ?? 0 })),
     othersNotToppedUp: current.filter((m) => m.id !== me.id && !toppedUp.has(m.id)).length,

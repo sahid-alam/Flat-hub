@@ -29,7 +29,11 @@ grant update (avatar_path, cover_path) on public.member to authenticated;
 --                 docs/NOTIFICATIONS.md is **push**, and 'silent' for **in-app** / **digest**.
 --   -- 'sound'  -> send it, with sound where the platform allows one (Android). On iOS web push
 --                 the phone's own notification settings decide the sound, not us.
---   -- 'silent' -> deliver it to the in-app list / the 19:00 digest; never a push.
+--   -- 'silent' -> no interruption. On Android that is a push with showNotification's `silent`
+--                 flag, which lands in the tray without a sound; Safari ignores that flag, so on
+--                 an iPhone it is NOT posted at all and the trigger arrives only in the in-app
+--                 list / the 19:00 digest. That is what src/app/profile/notifications.tsx
+--                 promises the flat, and supabase/functions/notify/index.ts does it per device.
 --   -- 'off'    -> do not deliver it at all.
 --
 -- The 22 trigger keys, their channel, their group and which ones are locked live in

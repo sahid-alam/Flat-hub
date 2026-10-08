@@ -66,3 +66,27 @@ test("the migration's locked list matches this file's", () => {
     'the SQL check constraint has drifted from TRIGGERS',
   );
 });
+
+// ---------------------------------------------------------------- B9's sender
+
+// B9 reads notification_pref by trigger key. A read with a key this file does not define returns
+// zero rows, and B9's "no row means the default" rule would then push to everyone who had muted it.
+// So the three lists must be one list: TRIGGERS, notification_send's CHECK, and the sender's PUSH.
+const B9_MIGRATION = '../../supabase/migrations/20261008220000_b9_notify.sql';
+const B9_SENDER = '../../supabase/functions/notify/index.ts';
+const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+const pushKeys = TRIGGERS.filter((t) => t.channel === 'push')
+  .map((t) => t.key)
+  .sort();
+
+test("notification_send's CHECK is exactly the push triggers", () => {
+  const list = read(B9_MIGRATION).match(/trigger text not null check \(trigger in \(([\s\S]*?)\)\)/);
+  assert.ok(list, "no trigger check constraint in B9's migration");
+  assert.deepEqual(quoted(list[1]), pushKeys, "B9's notification_send CHECK has drifted from TRIGGERS");
+});
+
+test("the sender's PUSH list is exactly the push triggers", () => {
+  const list = read(B9_SENDER).match(/const PUSH = new Set\(\[([\s\S]*?)\]\)/);
+  assert.ok(list, 'no PUSH set in the notify function');
+  assert.deepEqual(quoted(list[1]), pushKeys, "B9's PUSH set has drifted from TRIGGERS");
+});
