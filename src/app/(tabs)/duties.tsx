@@ -1,40 +1,46 @@
-// Whose turn it is, and where everyone stands. Every action appends one chore_event; nothing here
-// ever updates or deletes a row — Undo writes a reversal. A skip earns no credit — see
-// docs/DATA_MODEL.md ("Duties").
+// Whose turn it is, and where everyone stands. Every action appends one row and nothing here ever
+// updates or deletes one — Undo writes a reversal.
+//
+// THERE IS NO SKIP. A duty past its due date that nobody ticked is MISSED: computed from the
+// schedule, never recorded, earning no credit. A missed row reads as a fact and nothing more — no
+// clay, no warning glyph, no tally beside anyone's name.
+// A SWAP IS AN OFFER. The assignee offers their slot, it stays open and visible to all six, and
+// another mate taps Take it. Nobody is ever handed a duty. Unclaimed by the due date it is missed
+// like any other: an open offer protects nobody. See docs/DATA_MODEL.md ("Duties").
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { away, rota, standing } from '@/domain/duties';
+import { away, missed, offered, standing, vouchers, type RotaRow, type Slot } from '@/domain/duties';
+import { rota } from '@/domain/duties';
 import { newId } from '@/lib/id';
+import { pickPhoto, upload } from '@/lib/photo';
 import { insertOnce } from '@/lib/supabase';
 import { dayLabel, sayError, today } from '@/lib/util';
-import { cadenceLabel, isOpen, useDuties } from '@/ui/duties';
-import { Block, Choice, ErrorText, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, Toast, usePalette } from '@/ui/kit';
+import { SwipeRow, cadenceLabel, useDuties } from '@/ui/duties';
+import { Block, ErrorText, Icon, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, Toast, usePalette } from '@/ui/kit';
 
-const AHEAD = 5; // today plus the next four days
-const BACK = 2; // the two days behind today, so a late Done is still recordable
+const AHEAD = 5; // today plus the next four days: an offer has to work on a duty due on Thursday
+const BACK = 1; // yesterday, so a missed duty is stated once and then left alone
+const OFFER_ICON = { ios: 'arrow.up.circle', android: 'arrow_upward' };
 
-type Outcome = 'done' | 'skipped' | 'swapped';
-const initials = (name: string) => name.slice(0, 2).toUpperCase();
 const shift = (date: string, days: number) => new Date(Date.parse(date) + days * 86_400_000).toISOString().slice(0, 10);
 const list = (names: string[]) =>
   names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
 
 export default function Duties() {
   const c = usePalette();
-  const { duties, members, absences, choreEvents, household, me, name, reload, anchor } = useDuties();
+  const { duties, members, absences, choreEvents, dutyMarks, dutyPhotos, household, me, name, reload, anchor } =
+    useDuties();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [swapping, setSwapping] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ card: string; message: string; undo: () => void } | null>(null);
+  const [toast, setToast] = useState<{ card: string; message: string; undo?: () => void } | null>(null);
   // One id per pending action, kept until a reload confirms it: a retry after a lost response hits
   // insertOnce's 23505 path instead of appending a second event and paying the points twice.
   const pending = useRef(new Map<string, string>());
 
-  // Tabs stay mounted and nothing refetches on its own, so without this a tab left open shows
-  // stale rows: a duty another mate already marked Done still reads open, and tapping Done again
-  // appends a second chore_event that insertOnce cannot dedupe across devices.
+  // Tabs stay mounted and nothing refetches on its own, so without this a tab left open shows stale
+  // rows: a duty another mate already ticked still reads open.
   useFocusEffect(
     useCallback(() => {
       reload();
@@ -42,13 +48,10 @@ export default function Duties() {
   );
 
   const now = today();
-  // From two days back, so an instance nobody recorded on the day doesn't become unrecordable.
   const days = rota(duties, members, absences, choreEvents, shift(now, -BACK), AHEAD + BACK, anchor);
-  const late = days.filter((r) => r.date < now && isOpen(r.outcome));
+  const yesterday = days.filter((r) => r.date < now);
   const todays = days.filter((r) => r.date === now);
   const later = days.filter((r) => r.date > now);
-  // The status words must match the engine, so the window is the whole history since the anchor —
-  // that is exactly what assignee() measures.
   const stands = standing(duties, members, absences, choreEvents, anchor, now, anchor);
   const current = new Set(members.filter((m) => !m.left_on || m.left_on >= now).map((m) => m.id));
   const mates = stands
@@ -56,192 +59,281 @@ export default function Duties() {
     .map((s) => ({ ...s, name: name(s.memberId) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const openToday = todays.filter((r) => isOpen(r.outcome));
-  // Collapse the names: one mate's name once, not once per duty. Nobody should read their own name
-  // five times down one screen.
-  const whoToday = [...new Set(openToday.map((r) => (r.memberId ? name(r.memberId).split(' ')[0] : 'nobody free')))];
+  const open = (r: RotaRow) => r.slots.filter((s) => !s.done);
+  const openToday = todays.flatMap(open);
+  // Collapse the names: one mate's name once, not once per duty.
+  const whoToday = [...new Set(openToday.map((s) => name(s.holderId).split(' ')[0]))];
   const digest = !todays.length
     ? 'No duties due today.'
     : !openToday.length
       ? 'All of today’s duties are done.'
       : whoToday.length === 1
-        ? `${openToday.length} ${openToday.length === 1 ? 'duty' : 'duties'} today — all ${whoToday[0]}’s.`
-        : `${openToday.length} duties today — ${list(whoToday)}.`;
+        ? `${openToday.length} ${openToday.length === 1 ? 'turn' : 'turns'} left today — all ${whoToday[0]}’s.`
+        : `${openToday.length} turns left today — ${list(whoToday)}.`;
 
-  // Who the engine picks next, and when each mate's next open turn falls. Words, never a ranking.
-  const upcoming = [...late, ...todays, ...later].filter((r) => isOpen(r.outcome) && r.memberId);
-  const nextUp = upcoming[0]?.memberId ?? null;
+  // Whose next open turn falls when. Words, never a ranking.
+  const upcoming = [...todays, ...later].flatMap((r) => open(r).map((s) => ({ ...s, date: r.date })));
+  const nextUp = upcoming[0]?.holderId ?? null;
   const turnOn = new Map<string, string>();
-  for (const r of upcoming) if (r.memberId && !turnOn.has(r.memberId)) turnOn.set(r.memberId, r.date);
+  for (const s of upcoming) if (!turnOn.has(s.holderId)) turnOn.set(s.holderId, s.date);
   const mine = mates.find((m) => m.memberId === me.id);
 
-  async function record(r: (typeof days)[number], outcome: Outcome, toMemberId: string | null = null) {
-    if (!r.memberId) return;
-    const card = `${r.duty.id}:${r.date}`;
-    const key = `${card}:${outcome}:${toMemberId ?? ''}`;
-    const id = pending.current.get(key) ?? newId();
-    pending.current.set(key, id);
-    const row = {
-      household_id: household.id,
-      duty_id: r.duty.id,
-      member_id: r.memberId,
-      outcome,
-      to_member_id: toMemberId,
-      due_on: r.date,
-    };
+  // Accent once per screen: the first open turn today that is yours gets the brass tick.
+  const brass = todays.flatMap((r) => open(r).map((s) => `${r.duty.id}:${r.date}:${s.ownerId}`))
+    .find((k) => k.endsWith(`:${me.id}`));
+
+  async function run(key: string, work: () => Promise<void>) {
     setBusy(key);
     setError(null);
     setToast(null);
     try {
-      await insertOnce('chore_event', { id, ...row });
+      await work();
       await reload();
-      pending.current.delete(key); // only once the event is visible: before that, the id must stand
-      setSwapping(null);
-      setToast({
-        card,
-        message:
-          outcome === 'done'
-            ? `${r.duty.name} done`
-            : outcome === 'skipped'
-              ? `${r.duty.name} skipped — no points`
-              : `${r.duty.name} handed to ${toMemberId ? name(toMemberId).split(' ')[0] : 'a mate'}`,
-        // A mistake is corrected with a reversing row that mirrors the original, never a delete.
-        undo: async () => {
-          setBusy(`${key}:undo`);
-          try {
-            await insertOnce('chore_event', { id: newId(), ...row, reverses_id: id });
-            await reload();
-            setToast(null);
-          } catch (e) {
-            setError(sayError(e));
-          }
-          setBusy(null);
-        },
-      });
     } catch (e) {
       setError(sayError(e));
     }
     setBusy(null);
   }
 
-  // Accent once per screen: the first open instance that is yours gets the brass Done. If none is,
-  // the header's Manage carries the screen's one accent instead.
-  const brassCard = [...late, ...todays].find((r) => isOpen(r.outcome) && r.memberId === me.id);
-  const brassKey = brassCard ? `${brassCard.duty.id}:${brassCard.date}` : null;
+  /** Append one chore_event, idempotently, and offer an Undo that writes the mirroring reversal. */
+  async function event(
+    r: RotaRow,
+    slot: Slot,
+    outcome: 'done' | 'swapped',
+    toMemberId: string | null,
+    message: string,
+  ) {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    const key = `${card}:${outcome}`;
+    const id = pending.current.get(key) ?? newId();
+    pending.current.set(key, id);
+    // A claim is recorded against the mate who OFFERED the slot — that is the row the db's offer
+    // check answers, and what tells the engine the offerer kept their place in the rotation.
+    const row = {
+      household_id: household.id,
+      duty_id: r.duty.id,
+      member_id: outcome === 'swapped' ? slot.ownerId : slot.holderId,
+      outcome,
+      to_member_id: toMemberId,
+      due_on: r.date,
+    };
+    await run(key, async () => {
+      await insertOnce('chore_event', { id, ...row });
+      pending.current.delete(key); // only once it is visible: before that, the id must stand
+      setToast({
+        card,
+        message,
+        // A mistake is corrected with a reversing row that mirrors the original, never a delete.
+        undo: () => run(`${key}:undo`, async () => {
+          await insertOnce('chore_event', { id: newId(), ...row, reverses_id: id });
+          setToast(null);
+        }),
+      });
+    });
+  }
 
-  const card = (r: (typeof days)[number], stale: boolean) => {
-    const key = `${r.duty.id}:${r.date}`;
-    const yours = r.memberId === me.id;
-    const who = r.memberId ? name(r.memberId) : null;
-    // The latest swap of this instance, by id (UUIDv7 sorts by time); a reversal row is not one.
-    const from =
-      r.outcome === 'swapped'
-        ? choreEvents
-            .filter((e) => e.duty_id === r.duty.id && e.due_on === r.date && e.outcome === 'swapped' && !e.reverses_id)
-            .sort((a, b) => (a.id < b.id ? -1 : 1))
-            .pop()
-        : null;
-    return (
-      <Block
-        key={key}
-        accessibilityLabel={`${r.duty.name}, ${r.duty.effort_points} points, ${yours ? 'your turn' : `${who ?? 'nobody'}'s turn`}${stale ? `, still open from ${dayLabel(r.date)}` : ''}`}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-          <T size={17} weight="700" style={{ flex: 1 }}>
-            {r.duty.name}
-          </T>
-          <Pill label={`${r.duty.effort_points} ${r.duty.effort_points === 1 ? 'pt' : 'pts'}`} />
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          {who && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-              <View
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 13,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: yours ? c.ink : c.raised,
-                }}>
-                <T size={11} weight="700" color={yours ? c.ground : c.ink}>
-                  {initials(who)}
-                </T>
-              </View>
-              <T size={15} weight="700">
-                {yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
-              </T>
-            </View>
+  /** An offer or a vouch. Neither is a ledger row and neither carries points, so neither undoes. */
+  async function mark(r: RotaRow, slot: Slot, kind: 'offer' | 'vouch', message: string) {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    const key = `${card}:${kind}`;
+    await run(key, async () => {
+      await insertOnce('duty_mark', {
+        id: newId(),
+        household_id: household.id,
+        duty_id: r.duty.id,
+        due_on: r.date,
+        member_id: slot.ownerId,
+        kind,
+        by_member_id: me.id,
+      });
+      setToast({ card, message });
+    });
+  }
+
+  async function addPhoto(r: RotaRow, slot: Slot) {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    const uri = await pickPhoto();
+    if (!uri) return;
+    const id = newId();
+    await run(`${card}:photo`, async () => {
+      // Immutable once submitted: the row is inserted only after the file is up, and neither can be
+      // edited or removed afterwards. Swap the photo before you send it.
+      const path = await upload(household.id, `duty/${id}`, uri);
+      await insertOnce('duty_photo', {
+        id,
+        household_id: household.id,
+        duty_id: r.duty.id,
+        due_on: r.date,
+        member_id: slot.ownerId,
+        raised_by: me.id,
+        path,
+      });
+      setToast({ card, message: 'Photo added to the record.' });
+    });
+  }
+
+  /** One co-assignee's half of one instance. */
+  const slotRow = (r: RotaRow, slot: Slot, when: 'past' | 'today' | 'future') => {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    const yours = slot.holderId === me.id;
+    const who = name(slot.holderId);
+    const owner = name(slot.ownerId);
+    const isMissed = missed(slot, r.date, now);
+    const isOffered = offered(dutyMarks, r.duty.id, r.date, slot.ownerId) && !slot.done;
+    const vouched = vouchers(dutyMarks, r.duty.id, r.date, slot.ownerId);
+    const photos = dutyPhotos.filter(
+      (p) => p.duty_id === r.duty.id && p.due_on === r.date && p.member_id === slot.ownerId,
+    );
+
+    const tail = slot.done ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <T size={14} soft style={{ flex: 1 }}>
+          {yours ? 'You did it' : `${who.split(' ')[0]} did it`}
+          {vouched.length > 0 && ` · vouched by ${list(vouched.map((v) => name(v).split(' ')[0]))}`}
+        </T>
+        {!yours && !vouched.includes(me.id) && (
+          <Chip
+            label="Vouch"
+            busy={busy === `${card}:vouch`}
+            accessibilityLabel={`Vouch that ${who.split(' ')[0]} did ${r.duty.name}`}
+            onPress={() => mark(r, slot, 'vouch', `Vouched for ${who.split(' ')[0]}.`)}
+          />
+        )}
+      </View>
+    ) : isMissed ? (
+      // Grey, a single word, no icon, no colour. Nothing was written for it, and nothing is owed.
+      <T size={14} soft style={{ flex: 1 }}>
+        {yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`} · Missed
+      </T>
+    ) : isOffered && !yours ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <T size={14} soft style={{ flex: 1 }}>
+          {`${owner.split(' ')[0]} offered it · due ${dayLabel(r.date)}`}
+        </T>
+        <Chip
+          label="Take it"
+          strong
+          busy={busy === `${card}:swapped`}
+          accessibilityLabel={`Take ${r.duty.name} from ${owner.split(' ')[0]}, due ${dayLabel(r.date)}`}
+          onPress={() => event(r, slot, 'swapped', me.id, `${r.duty.name} is yours — due ${dayLabel(r.date)}.`)}
+        />
+      </View>
+    ) : (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <T size={14} weight={yours ? '700' : '500'} soft={!yours} style={{ flex: 1 }}>
+          {yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
+          {isOffered && ' · offered, waiting for somebody to take it'}
+        </T>
+        {yours && when !== 'future' && (
+          <Chip
+            label="Done"
+            strong
+            accent={card === brass}
+            busy={busy === `${card}:done`}
+            accessibilityLabel={`${r.duty.name} · mark done`}
+            onPress={() => event(r, slot, 'done', null, `${r.duty.name} done`)}
+          />
+        )}
+        {yours && !isOffered && (
+          <Chip
+            label="Offer"
+            busy={busy === `${card}:offer`}
+            accessibilityLabel={`Offer ${r.duty.name}, due ${dayLabel(r.date)}, to anyone who will take it`}
+            onPress={() => mark(r, slot, 'offer', `Offered — it is open until somebody takes it.`)}
+          />
+        )}
+      </View>
+    );
+
+    const body = (
+      <View
+        accessibilityLabel={`${r.duty.name}, ${yours ? 'your turn' : `${who}'s turn`}${slot.done ? ', done' : isMissed ? ', missed' : ''}`}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, backgroundColor: c.surface }}>
+        <Ring state={slot.done ? 'done' : isMissed ? 'missed' : isOffered ? 'offered' : yours ? 'yours' : 'theirs'} />
+        <View style={{ flex: 1, gap: 2 }}>
+          {r.duty.group_size > 1 && (
+            <T size={15} weight="700">
+              {yours ? 'You' : who.split(' ')[0]}
+            </T>
           )}
-          <T size={13} soft>
-            {stale ? `Still open from ${dayLabel(r.date)}` : cadenceLabel(r.duty)}
-          </T>
+          {tail}
         </View>
-        {from && (
-          <T size={13} weight="600" soft>
-            {`Swapped from ${name(from.member_id).split(' ')[0]} — the points come with it, and ${name(from.member_id).split(' ')[0]} keeps their place in the rotation.`}
-          </T>
-        )}
+      </View>
+    );
 
-        {!isOpen(r.outcome) ? (
-          <T size={15} weight="600" soft>
-            {r.outcome === 'done' ? `Done by ${who ?? 'a mate'}.` : 'Skipped — it earned no points.'}
-          </T>
-        ) : !r.memberId ? (
-          <T size={15} weight="600" soft>
-            Nobody is available — everyone due a turn is away.
-          </T>
+    return (
+      <View key={card} style={{ gap: 6 }}>
+        {/* Swipe is a shortcut, never the only route: the Offer chip above does the same thing. */}
+        {yours && !slot.done && !isMissed && !isOffered ? (
+          <SwipeRow
+            label="Offer"
+            icon={OFFER_ICON}
+            onAction={() => mark(r, slot, 'offer', 'Offered — it is open until somebody takes it.')}>
+            {body}
+          </SwipeRow>
         ) : (
-          <View style={{ gap: 8 }}>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              <Action
-                label="Done"
-                primary
-                accent={key === brassKey}
-                busy={busy === `${key}:done:`}
-                accessibilityLabel={`${r.duty.name} · mark done`}
-                onPress={() => record(r, 'done')}
-              />
-              <Action
-                label="Skip"
-                busy={busy === `${key}:skipped:`}
-                accessibilityLabel={`${r.duty.name} · skip, earns no points`}
-                onPress={() => record(r, 'skipped')}
-              />
-              <Action
-                label="Swap"
-                accessibilityLabel={`${r.duty.name} · swap with someone else`}
-                onPress={() => setSwapping(swapping === key ? null : key)}
-              />
-            </View>
-            {swapping === key && (
-              <View style={{ gap: 6 }}>
-                <SectionLabel>Swap to</SectionLabel>
-                <Choice
-                  // Only mates who are actually here on the day: a chore can't be dumped on someone away.
-                  options={members
-                    .filter((m) => m.id !== r.memberId && current.has(m.id) && !away(absences, m.id, r.date))
-                    .map((m) => ({ value: m.id, label: m.display_name.split(' ')[0] }))}
-                  value=""
-                  onChange={(id) => record(r, 'swapped', id)}
-                />
-              </View>
-            )}
-            {yours && (
-              <T size={13} soft>
-                Skip earns no points — you stay where you are in the rota. Swap hands this one over, and the points go
-                with it.
-              </T>
-            )}
-          </View>
+          body
         )}
-        {toast?.card === key && <Toast message={toast.message} onUndo={toast.undo} style={{ marginTop: 4 }} />}
-      </Block>
+        {photos.length > 0 && (
+          <T size={13} soft>
+            {`${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} · added by ${list([
+              ...new Set(photos.map((p) => name(p.raised_by).split(' ')[0])),
+            ])}`}
+          </T>
+        )}
+        {when !== 'future' && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Add a photo to ${r.duty.name}, ${dayLabel(r.date)}`}
+            disabled={busy === `${card}:photo`}
+            onPress={() => addPhoto(r, slot)}
+            style={({ pressed }) => [
+              { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
+              pressed && { opacity: 0.6 },
+            ]}>
+            <Icon name={{ ios: 'camera', android: 'photo_camera' }} size={16} color={c.muted} />
+            <T size={13} weight="600" soft>
+              {busy === `${card}:photo` ? 'Adding…' : 'Add a photo'}
+            </T>
+          </Pressable>
+        )}
+        {toast?.card === card && <Toast message={toast.message} onUndo={toast.undo} style={{ marginTop: 2 }} />}
+      </View>
     );
   };
 
+  const dutyBlock = (r: RotaRow, when: 'past' | 'today' | 'future') => (
+    <Block key={`${r.duty.id}:${r.date}`}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+        <T size={17} weight="700" style={{ flex: 1 }}>
+          {r.duty.name}
+        </T>
+        <Pill
+          label={`${r.duty.effort_points} ${r.duty.effort_points === 1 ? 'pt' : 'pts'}${r.duty.group_size > 1 ? ' each' : ''}`}
+        />
+      </View>
+      <T size={13} soft>
+        {r.duty.group_size > 1
+          ? `${r.duty.group_size} together, the same day · ${cadenceLabel(r.duty)}`
+          : cadenceLabel(r.duty)}
+      </T>
+      {r.duty.plans_meals && r.slots.some((s) => s.holderId === me.id) && when === 'today' && (
+        <T size={13} weight="600" soft>
+          You also tell the cook what to make today.
+        </T>
+      )}
+      {r.slots.length === 0 ? (
+        <T size={15} weight="600" soft>
+          Nobody is available — everyone in this duty is away.
+        </T>
+      ) : (
+        <View style={{ gap: 10 }}>{r.slots.map((s) => slotRow(r, s, when))}</View>
+      )}
+    </Block>
+  );
+
   return (
-    // Duties is a tab now, so there is no nav header to hang Manage off: the screen pins its own
-    // title row, exactly as the Kitchen tab does.
+    // Duties is a tab, so there is no nav header to hang Manage off: the screen pins its own title row.
     <View style={{ flex: 1, backgroundColor: c.ground }}>
       <View
         style={{
@@ -266,155 +358,172 @@ export default function Duties() {
               paddingHorizontal: 16,
               borderRadius: 24,
               borderWidth: 1.5,
-              borderColor: brassKey ? c.line : c.accentText,
+              borderColor: brass ? c.line : c.accentText,
             },
             pressed && { transform: [{ scale: 0.97 }] },
           ]}>
-          <T size={15} weight="700" color={brassKey ? c.ink : c.accentText}>
+          <T size={15} weight="700" color={brass ? c.ink : c.accentText}>
             Manage
           </T>
         </Pressable>
       </View>
       <Screen padBottom={TAB_BAR}>
-      <Block tone="raised" accessibilityLabel={digest}>
-        <T size={15} weight="700">
-          {digest}
-        </T>
-      </Block>
-
-      <ErrorText error={error} />
-
-      {duties.filter((d) => d.active).length === 0 && (
-        <Block>
-          <T size={17} weight="700">
-            No duties yet
-          </T>
-          <T soft>
-            Add the chores this flat actually does — dishes, kitchen floor, bins — and FlatHub works out whose turn each
-            one is. Tap Manage above.
+        <Block tone="raised" accessibilityLabel={digest}>
+          <T size={15} weight="700">
+            {digest}
           </T>
         </Block>
-      )}
 
-      {late.map((r) => card(r, true))}
-      {todays.map((r) => card(r, false))}
+        <ErrorText error={error} />
 
-      {later.length > 0 && (
-        <Block style={{ gap: 0, paddingBottom: 8 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <SectionLabel>Next few days</SectionLabel>
+        {duties.filter((d) => d.active).length === 0 && (
+          <Block>
+            <T size={17} weight="700">
+              No duties yet
+            </T>
+            <T soft>
+              Add the chores the six of you argue about, and FlatHub works out whose turn each one is — one mate at a
+              time, or two together on the same day. Tap Manage above.
+            </T>
+          </Block>
+        )}
+
+        {yesterday.some((r) => r.slots.some((s) => missed(s, r.date, now))) && (
+          <>
+            <SectionLabel>{dayLabel(yesterday[0].date)}</SectionLabel>
+            {yesterday.filter((r) => r.slots.some((s) => missed(s, r.date, now))).map((r) => dutyBlock(r, 'past'))}
             <T size={13} soft>
-              Already decided
+              A missed duty is worked out from the schedule, never written down. It earns no credit, and nothing is
+              owed for it.
             </T>
-          </View>
-          {[...new Set(later.map((r) => r.date))].map((date, i) => {
-            const rows = later.filter((r) => r.date === date);
-            const who = [...new Set(rows.map((r) => (r.memberId ? name(r.memberId).split(' ')[0] : 'nobody free')))];
-            return (
-              <View key={date} style={{ paddingVertical: 8, gap: 2 }}>
-                {i > 0 && <Rule />}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingTop: i > 0 ? 8 : 0 }}>
-                  <T size={13} weight="700" soft>
-                    {dayLabel(date)}
-                  </T>
-                  <T size={13} soft>
-                    {list(who)}
-                  </T>
-                </View>
-                <T size={14} weight="600">
-                  {rows.map((r) => r.duty.name).join(', ')}
-                </T>
-              </View>
-            );
-          })}
-        </Block>
-      )}
+          </>
+        )}
 
-      {mates.length > 0 && (
-        <Block>
-          <SectionLabel>Where everyone stands</SectionLabel>
-          {/* No bars and no shared column: a scoreboard is exactly what this screen must not be
-              (DESIGN.md rule 4). One status word each, in fixed alphabetical order. */}
-          {mates.map((m) => {
-            const isAway = away(absences, m.memberId, now);
-            const status = isAway
-              ? 'Away — no turns'
-              : m.memberId === nextUp
-                ? 'Next in line'
-                : turnOn.has(m.memberId)
-                  ? `Turn on ${dayLabel(turnOn.get(m.memberId)!)}`
-                  : 'No turn in the next few days';
-            return (
-              <View
-                key={m.memberId}
-                accessibilityRole="text"
-                accessibilityLabel={`${m.name}: ${status}`}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <T size={15} weight="600" numberOfLines={1}>
-                  {m.name.split(' ')[0]}
-                </T>
-                {isAway ? (
-                  <T
-                    size={12}
-                    weight="700"
-                    color={c.warnFg}
-                    style={{ backgroundColor: c.warnBg, borderRadius: 9999, paddingHorizontal: 9, paddingVertical: 4 }}>
-                    {status}
-                  </T>
-                ) : (
-                  <T size={14} soft>
-                    {status}
-                  </T>
-                )}
-              </View>
-            );
-          })}
-          <Rule />
-          {mine && (
-            <T size={14} soft>
-              You:{' '}
-              <T size={14} num>
-                {mine.done}
-              </T>{' '}
-              of{' '}
-              <T size={14} num>
-                {Math.round(mine.fair)}
-              </T>{' '}
-              pts since {dayLabel(anchor)}.
+        {todays.map((r) => dutyBlock(r, 'today'))}
+
+        {later.length > 0 && (
+          <>
+            <SectionLabel>Next few days</SectionLabel>
+            {later.map((r) => dutyBlock(r, 'future'))}
+            <T size={13} soft>
+              You can offer a turn days before it falls due — it stays open until somebody takes it.
             </T>
-          )}
-          <T size={13} soft>
-            A skip earns no credit. The next turn always goes to whoever is furthest behind their fair share — never to
-            a random name.
-          </T>
-        </Block>
-      )}
+          </>
+        )}
+
+        {mates.length > 0 && (
+          <Block>
+            <SectionLabel>Where everyone stands</SectionLabel>
+            {/* No bars and no shared column: a scoreboard is exactly what this screen must not be
+                (DESIGN.md rule 4). One status word each, in fixed alphabetical order. */}
+            {mates.map((m) => {
+              const isAway = away(absences, m.memberId, now);
+              const status = isAway
+                ? 'Away — no turns'
+                : m.memberId === nextUp
+                  ? 'Next in line'
+                  : turnOn.has(m.memberId)
+                    ? `Turn on ${dayLabel(turnOn.get(m.memberId)!)}`
+                    : 'No turn in the next few days';
+              return (
+                <View
+                  key={m.memberId}
+                  accessibilityRole="text"
+                  accessibilityLabel={`${m.name}: ${status}`}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <T size={15} weight="600" numberOfLines={1}>
+                    {m.name.split(' ')[0]}
+                  </T>
+                  {isAway ? (
+                    <T
+                      size={12}
+                      weight="700"
+                      color={c.warnFg}
+                      style={{ backgroundColor: c.warnBg, borderRadius: 9999, paddingHorizontal: 9, paddingVertical: 4 }}>
+                      {status}
+                    </T>
+                  ) : (
+                    <T size={14} soft>
+                      {status}
+                    </T>
+                  )}
+                </View>
+              );
+            })}
+            <Rule />
+            {mine && (
+              <T size={14} soft>
+                You:{' '}
+                <T size={14} num>
+                  {mine.done}
+                </T>{' '}
+                of{' '}
+                <T size={14} num>
+                  {Math.round(mine.fair)}
+                </T>{' '}
+                pts since {dayLabel(anchor)}.
+              </T>
+            )}
+            <T size={13} soft>
+              The next turn always goes to whoever is furthest behind their fair share — never to a random name.
+            </T>
+          </Block>
+        )}
       </Screen>
     </View>
   );
 }
 
-/** One of the three action pills. kit's MagnetButton is 56pt and full width; three must fit a row. */
-function Action({
+/** The state of one slot, at a glance. Every ring is paired with words: colour carries nothing alone. */
+function Ring({ state }: { state: 'yours' | 'theirs' | 'done' | 'missed' | 'offered' }) {
+  const c = usePalette();
+  const box = {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  };
+  if (state === 'done')
+    return (
+      <View style={[box, { backgroundColor: c.positiveBg }]}>
+        <Icon name={{ ios: 'checkmark', android: 'check' }} size={15} color={c.positive} />
+      </View>
+    );
+  if (state === 'offered')
+    return (
+      <View style={[box, { borderWidth: 1.5, borderColor: c.line }]}>
+        <Icon name={{ ios: 'arrow.up', android: 'arrow_upward' }} size={14} color={c.muted} />
+      </View>
+    );
+  // yours is an ink ring; theirs and missed are muted hairlines — someone else's turn is an inert
+  // mark, never a control that would reject the tap.
+  return (
+    <View
+      style={[box, { borderWidth: state === 'yours' ? 2 : 1.5, borderColor: state === 'yours' ? c.ink : c.hair }]}
+    />
+  );
+}
+
+/** A small action pill, 44pt. kit's MagnetButton is 56pt and full width; two of these share a row. */
+function Chip({
   label,
-  primary,
+  strong,
   accent,
   busy,
   accessibilityLabel,
   onPress,
 }: {
   label: string;
-  primary?: boolean;
+  strong?: boolean;
   accent?: boolean;
   busy?: boolean;
   accessibilityLabel: string;
   onPress: () => void;
 }) {
   const c = usePalette();
-  // Done is the only filled pill; Skip and Swap are borderless, so a one-tap Skip never carries the
-  // same weight as a Done. Busy shows on the tapped pill alone — the rest stay live.
-  const fill = busy ? c.raised : accent ? c.accent : primary ? c.solid : 'transparent';
-  const fg = busy ? c.muted : accent ? c.onAccent : primary ? c.onSolid : c.ink;
+  const fill = busy ? c.raised : accent ? c.accent : strong ? c.solid : 'transparent';
+  const fg = busy ? c.muted : accent ? c.onAccent : strong ? c.onSolid : c.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -424,16 +533,18 @@ function Action({
       onPress={onPress}
       style={({ pressed }) => [
         {
-          flex: primary ? 1.3 : 1,
-          minHeight: 48,
-          borderRadius: 24,
+          minHeight: 44,
+          paddingHorizontal: 16,
+          borderRadius: 22,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: fill,
+          borderWidth: strong || accent ? 0 : 1.5,
+          borderColor: c.line,
         },
         pressed && { transform: [{ scale: 0.97 }] },
       ]}>
-      <T size={15} weight="700" color={fg}>
+      <T size={14} weight="700" color={fg}>
         {busy ? 'Saving…' : label}
       </T>
     </Pressable>

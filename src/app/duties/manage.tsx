@@ -1,420 +1,77 @@
-// Add and edit the flat's duties. A duty is household data, not a ledger: members may insert and
-// update it. Nobody can delete one — retiring sets active = false, so the history keeps pointing
-// at something. See docs/DATA_MODEL.md ("Duties").
-import { useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+// The flat's duties. The LIST comes first: you add a duty roughly never and edit one every few
+// weeks, so opening on an empty Add form had it backwards. Tapping a duty edits it; Add duty is its
+// own button. Nobody can delete one — retiring sets active = false, so the points already earned
+// keep pointing at something. See docs/DATA_MODEL.md ("Duties").
+import { router } from 'expo-router';
+import { View } from 'react-native';
 
-import { useHousehold, type DutyRow } from '@/lib/books';
-import { newId } from '@/lib/id';
-import { insertOnce, supabase } from '@/lib/supabase';
-import { sayError } from '@/lib/util';
-import { cadenceLabel } from '@/ui/duties';
-import { Block, Choice, ErrorText, Field, Icon, MagnetButton, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
-
-const POINTS = ['1', '2', '3', '5', '8'];
-const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+import { useHousehold } from '@/lib/books';
+import { dutyLine } from '@/ui/duties';
+import { Block, MagnetButton, Row, Rule, Screen, SectionLabel, T, usePalette } from '@/ui/kit';
 
 export default function ManageDuties() {
-  const { duties, members, household, reload, name } = useHousehold();
-  // null means the form is adding a new duty; a row means it is editing that one.
-  const [editing, setEditing] = useState<DutyRow | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const mates = members.filter((m) => !m.left_on);
-  const ordered = [...duties.filter((d) => d.active), ...duties.filter((d) => !d.active)];
-
-  /** `id` names the row to update; null adds one. Restore passes the row it sits on, not whatever
-   *  the form happens to be editing. */
-  async function save(payload: Payload, id: string | null) {
-    setBusy(true);
-    setError(null);
-    try {
-      if (id) {
-        // Exactly the seven granted columns: anything else is a column-level permission denied.
-        const { error: e } = await supabase.from('duty').update(payload).eq('id', id);
-        if (e) throw e;
-      } else {
-        await insertOnce('duty', { id: newId(), household_id: household.id, ...payload });
-      }
-      await reload();
-      setEditing(null);
-    } catch (e) {
-      setError(sayError(e));
-    }
-    setBusy(false);
-  }
+  const c = usePalette();
+  const { duties, name } = useHousehold();
+  const active = duties.filter((d) => d.active);
+  const retired = duties.filter((d) => !d.active);
 
   return (
     <Screen>
-      <Block style={{ gap: 0, paddingBottom: 8 }}>
-        <SectionLabel>Duties</SectionLabel>
-        {ordered.length === 0 && (
-          <T soft style={{ paddingVertical: 12 }}>
-            Nothing yet. Fill the form below for the first one.
-          </T>
-        )}
-        {ordered.map((d, i) => (
-          <View key={d.id}>
-            {i > 0 && <Rule />}
-            <DutyLine
-              duty={d}
-              mate={d.schedule === 'fixed' && d.fixed_member_id ? name(d.fixed_member_id).split(' ')[0] : null}
-              picked={editing?.id === d.id}
-              busy={busy}
-              onPress={() => setEditing(editing?.id === d.id ? null : d)}
-              onRestore={() => save7(d, { active: true }, save)}
-            />
-          </View>
-        ))}
-      </Block>
-
-      <ErrorText error={error} />
-
-      <DutyForm
-        key={editing?.id ?? 'new'}
-        duty={editing}
-        mates={mates.map((m) => ({ value: m.id, label: m.display_name.split(' ')[0] }))}
-        busy={busy}
-        onCancel={() => setEditing(null)}
-        onSave={save}
-      />
-    </Screen>
-  );
-}
-
-type Payload = {
-  name: string;
-  effort_points: number;
-  every_days: number | null;
-  weekdays: number[] | null;
-  schedule: 'rolling' | 'fixed';
-  fixed_member_id: string | null;
-  active: boolean;
-};
-
-/** Restore keeps every other column exactly as it is, so one changed field still sends all seven. */
-const save7 = (d: DutyRow, change: Partial<Payload>, save: (p: Payload, id: string) => void) =>
-  save(
-    {
-      name: d.name,
-      effort_points: d.effort_points,
-      every_days: d.every_days,
-      weekdays: d.weekdays,
-      schedule: d.schedule,
-      fixed_member_id: d.fixed_member_id,
-      active: d.active,
-      ...change,
-    },
-    d.id,
-  );
-
-function DutyLine({
-  duty,
-  mate,
-  picked,
-  busy,
-  onPress,
-  onRestore,
-}: {
-  duty: DutyRow;
-  mate: string | null;
-  picked: boolean;
-  busy: boolean;
-  onPress: () => void;
-  onRestore: () => void;
-}) {
-  const c = usePalette();
-  const sub = `${cadenceLabel(duty)}${mate ? ` · ${mate}` : duty.schedule === 'fixed' ? ' · fixed' : ''}`;
-  // Retired rows stay in muted ink rather than behind an opacity, so they keep their contrast.
-  const fg = duty.active ? c.ink : c.muted;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ selected: picked }}
-        accessibilityLabel={`${duty.name}, ${duty.effort_points} points, ${sub}${duty.active ? '' : ', retired'} · edit`}
-        onPress={onPress}
-        style={({ pressed }) => [
-          { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingHorizontal: 10, borderRadius: 16 },
-          // The picked row carries kit's Choice grammar: raised fill plus a 1.5px ink outline.
-          picked ? { backgroundColor: c.raised, borderWidth: 1.5, borderColor: c.ink } : { borderWidth: 1.5, borderColor: 'transparent' },
-          pressed && { opacity: 0.6 },
-        ]}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <T size={16} weight="700" color={fg} numberOfLines={1}>
-            {duty.name}
-            {duty.active ? '' : ' · Retired'}
-          </T>
-          <T size={13} soft>
-            {sub} · {duty.effort_points} {duty.effort_points === 1 ? 'pt' : 'pts'}
-          </T>
-        </View>
-        <Icon name={{ ios: 'chevron.right', android: 'chevron_right' }} size={14} color={c.muted} />
-      </Pressable>
-      {!duty.active && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${duty.name} · restore`}
-          disabled={busy}
-          onPress={onRestore}
-          style={({ pressed }) => [
-            {
-              minHeight: 48,
-              justifyContent: 'center',
-              paddingHorizontal: 14,
-              borderRadius: 24,
-              borderWidth: 1.5,
-              borderColor: c.line,
-            },
-            pressed && { opacity: 0.6 },
-          ]}>
-          <T size={13} weight="700">
-            Restore
-          </T>
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-function DutyForm({
-  duty,
-  mates,
-  busy,
-  onCancel,
-  onSave,
-}: {
-  duty: DutyRow | null;
-  mates: { value: string; label: string }[];
-  busy: boolean;
-  onCancel: () => void;
-  onSave: (p: Payload, id: string | null) => void;
-}) {
-  const [text, setText] = useState(duty?.name ?? '');
-  const [points, setPoints] = useState(String(duty?.effort_points ?? 1));
-  const [mode, setMode] = useState<'weekdays' | 'days'>(duty?.weekdays ? 'weekdays' : 'days');
-  const [weekdays, setWeekdays] = useState<number[]>(duty?.weekdays ?? []);
-  const [everyDays, setEveryDays] = useState(String(duty?.every_days ?? 1));
-  const [schedule, setSchedule] = useState<'rolling' | 'fixed'>(duty?.schedule ?? 'rolling');
-  const [fixed, setFixed] = useState(duty?.fixed_member_id ?? '');
-  const [active, setActive] = useState(duty?.active ?? true);
-
-  const name = text.trim().replace(/\s+/g, ' ');
-  const n = Number(everyDays);
-  const cadenceOk = mode === 'weekdays' ? weekdays.length > 0 : Number.isInteger(n) && n >= 1 && n <= 90;
-  // The button says what is missing rather than sitting grey and silent (DESIGN.md rule 2).
-  const blocker = !name.length
-    ? 'Name the duty first'
-    : !cadenceOk
-      ? mode === 'weekdays'
-        ? 'Pick at least one weekday'
-        : 'Pick 1 to 90 days'
-      : schedule === 'fixed' && !mates.some((m) => m.value === fixed)
-        ? 'Pick the mate'
-        : null;
-
-  // Each answer reads back as words on its own row, so the duty reads as a sentence with the form
-  // folded away. One section is open at a time; the controls inside are the shipped ones.
-  const [open, setOpen] = useState<Section | null>(null);
-  const toggle = (s: Section) => setOpen(open === s ? null : s);
-  const cadenceWords =
-    mode === 'weekdays'
-      ? weekdays.length
-        ? cadenceLabel({ weekdays: [...weekdays].sort(), every_days: null })
-        : 'Pick the days'
-      : cadenceOk
-        ? cadenceLabel({ weekdays: null, every_days: n })
-        : '1 to 90 days';
-  const turnWords =
-    schedule === 'rolling'
-      ? 'Rolling — whoever is furthest behind'
-      : `Always ${mates.find((m) => m.value === fixed)?.label ?? 'one mate'}`;
-
-  return (
-    <Block>
-      <SectionLabel>{duty ? `Edit ${duty.name}` : 'Add a duty'}</SectionLabel>
-      <Field label="Name" value={text} onChangeText={setText} placeholder="e.g. Terrace sweep" maxLength={60} />
-
-      <Disclosure question="How often is this chore?" answer={cadenceWords} open={open === 'cadence'} onPress={() => toggle('cadence')}>
-        <Choice
-          options={[
-            { value: 'weekdays' as const, label: 'On weekdays' },
-            { value: 'days' as const, label: 'Every N days' },
-          ]}
-          value={mode}
-          onChange={setMode}
-        />
-        {mode === 'weekdays' ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {WD.map((label, i) => (
-              <Day
-                key={label}
-                label={label}
-                on={weekdays.includes(i)}
-                onPress={() => setWeekdays(weekdays.includes(i) ? weekdays.filter((w) => w !== i) : [...weekdays, i])}
-              />
-            ))}
-          </View>
-        ) : (
-          <Field
-            label="Every how many days? (1–90)"
-            value={everyDays}
-            onChangeText={setEveryDays}
-            keyboardType="number-pad"
-            maxLength={2}
-          />
-        )}
-      </Disclosure>
-
-      <Disclosure
-        question="Worth how much?"
-        answer={`${points} effort ${points === '1' ? 'point' : 'points'}`}
-        open={open === 'points'}
-        onPress={() => toggle('points')}>
-        <Choice options={POINTS.map((p) => ({ value: p, label: p }))} value={points} onChange={setPoints} />
-        <T size={13} soft>
-          A heavier chore is worth more, so one bathroom clean can balance three bin runs.
-        </T>
-      </Disclosure>
-
-      <Disclosure question="Whose turn is it?" answer={turnWords} open={open === 'turn'} onPress={() => toggle('turn')}>
-        <Choice
-          options={[
-            { value: 'rolling' as const, label: 'Rolling' },
-            { value: 'fixed' as const, label: 'Always one mate' },
-          ]}
-          value={schedule}
-          onChange={setSchedule}
-        />
-        {schedule === 'fixed' && <Choice options={mates} value={fixed} onChange={setFixed} />}
-      </Disclosure>
-
-      <Disclosure
-        question="Is it still on?"
-        answer={active ? 'Active' : 'Retired'}
-        open={open === 'status'}
-        onPress={() => toggle('status')}>
-        <Choice
-          options={[
-            { value: 'active' as const, label: 'Active' },
-            { value: 'retired' as const, label: 'Retired' },
-          ]}
-          value={active ? 'active' : 'retired'}
-          onChange={(v) => setActive(v === 'active')}
-        />
-      </Disclosure>
-
-      <T size={13} soft>
-        {schedule === 'rolling'
-          ? 'Rolling: each turn goes to whoever is furthest behind their fair share.'
-          : 'Always one mate: this duty never rotates.'}{' '}
-        Retiring stops new turns; the turns already done stay in everyone&apos;s points.
-      </T>
-
       <MagnetButton
-        label={busy ? 'Saving…' : (blocker ?? (duty ? 'Save duty' : 'Add duty'))}
+        label="Add a duty"
         color="brass"
-        disabled={busy || blocker !== null}
-        onPress={() =>
-          onSave(
-            {
-              name,
-              effort_points: Number(points),
-              // Exactly one cadence: the unused one must be null, never an empty array.
-              every_days: mode === 'days' ? n : null,
-              weekdays: mode === 'weekdays' ? [...weekdays].sort() : null,
-              schedule,
-              fixed_member_id: schedule === 'fixed' ? fixed : null,
-              active,
-            },
-            duty?.id ?? null,
-          )
-        }
+        icon={{ ios: 'plus', android: 'add' }}
+        onPress={() => router.push('/duties/edit')}
       />
-      {duty && <MagnetButton label="Cancel" outline onPress={onCancel} />}
-    </Block>
-  );
-}
 
-type Section = 'cadence' | 'points' | 'turn' | 'status';
-
-/**
- * One question of the duty, with its current answer in words and the controls folded underneath.
- * kit's Row has no expanded state and this is the only screen that asks questions this way, so it
- * lives here rather than in the kit.
- */
-function Disclosure({
-  question,
-  answer,
-  open,
-  onPress,
-  children,
-}: {
-  question: string;
-  answer: string;
-  open: boolean;
-  onPress: () => void;
-  children: ReactNode;
-}) {
-  const c = usePalette();
-  return (
-    <View style={{ gap: 12 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${question} ${answer}`}
-        onPress={onPress}
-        style={({ pressed }) => [
-          { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12 },
-          pressed && { opacity: 0.6 },
-        ]}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <T size={17} weight="600">
-            {question}
+      <SectionLabel>{active.length === 1 ? 'The flat runs one' : `The flat runs ${active.length}`}</SectionLabel>
+      <Block style={{ gap: 0, paddingVertical: 4 }}>
+        {active.length === 0 ? (
+          <T soft style={{ paddingVertical: 12 }}>
+            Nothing yet. Add the chores the six of you argue about — one mate at a time, or two together on the same
+            day.
           </T>
-          <T size={15} soft numberOfLines={1}>
-            {answer}
-          </T>
-        </View>
-        <Icon
-          name={open ? { ios: 'chevron.down', android: 'expand_more' } : { ios: 'chevron.right', android: 'chevron_right' }}
-          size={14}
-          color={c.muted}
-        />
-      </Pressable>
-      {open && <View style={{ gap: 12, paddingBottom: 4 }}>{children}</View>}
-      <Rule />
-    </View>
-  );
-}
+        ) : (
+          active.map((d, i) => (
+            <View key={d.id}>
+              {i > 0 && <Rule />}
+              <Row label={d.name} detail={null} onPress={() => router.push(`/duties/edit?id=${d.id}`)} />
+              <T size={13} soft style={{ paddingBottom: 8 }}>
+                {dutyLine(d, name)}
+              </T>
+            </View>
+          ))
+        )}
+      </Block>
+      {active.length > 0 && (
+        <T size={13} soft>
+          Tap one to edit it.
+        </T>
+      )}
 
-/** A weekday toggle. kit's Choice is single-select and weekdays are a set, so this screen has one. */
-function Day({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  const c = usePalette();
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: on }}
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [
-        {
-          // A wrapping row, never seven 37px toggles squeezed onto a 360px phone.
-          minWidth: 52,
-          paddingHorizontal: 12,
-          minHeight: 48,
-          borderRadius: 24,
-          borderWidth: 1.5,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: on ? c.raised : 'transparent',
-          borderColor: on ? c.ink : c.line,
-        },
-        pressed && { transform: [{ scale: 0.97 }] },
-      ]}>
-      <T size={13} weight="700">
-        {label.slice(0, 2)}
-      </T>
-    </Pressable>
+      {retired.length > 0 && (
+        <>
+          <SectionLabel>Retired</SectionLabel>
+          <Block style={{ gap: 0, paddingVertical: 4 }}>
+            {retired.map((d, i) => (
+              <View key={d.id}>
+                {i > 0 && <Rule />}
+                <Row
+                  label={d.name}
+                  detail={null}
+                  onPress={() => router.push(`/duties/edit?id=${d.id}`)}
+                />
+                <T size={13} color={c.muted} style={{ paddingBottom: 8 }}>
+                  Stopped · its old turns stay in everyone&apos;s points
+                </T>
+              </View>
+            ))}
+          </Block>
+          <T size={13} soft>
+            A duty is retired, never deleted: deleting one would rewrite history the points were earned from.
+          </T>
+        </>
+      )}
+    </Screen>
   );
 }
