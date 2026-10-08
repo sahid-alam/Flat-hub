@@ -21,7 +21,7 @@ Built for our flat first. It may become a product for other flats later, so ever
 - Every row gets a client-generated UUID (v7), so retries are idempotent.
 - Every table has `household_id`, and RLS restricts access to members of that household.
 - Each piece of money, rotation or month-close logic gets one runnable test. That test must fail if the pool stops balancing or if a missed chore earns credit.
-- Don't import the report's pairwise-split machinery (debt simplification, Spliit-style per-expense splits, mate-to-mate UPI). This flat uses a **pooled kitty**; see PLAN.md.
+- Don't import the report's pairwise-split machinery (debt simplification, Spliit-style per-expense splits, mate-to-mate UPI) **into the kitty**. The kitty is a **pooled** pot; see PLAN.md. **Bills are the exception**: a bill is one mate paying a vendor and the others owing that mate, so it needs a payer, a share each and a debt until settled. Bills live in their own tables (`bill`, `bill_share`, `bill_payment`) and never touch `pool_entry`, `monthBreakdown` or anyone's kitty position.
 
 ## Domain words
 

@@ -2,6 +2,7 @@
 // and the treasurer's record-a-top-up. None of them is a daily job, so none of them earns a tab.
 import { router } from 'expo-router';
 
+import { toGetBack, toPay } from '@/domain/bills';
 import { unreimbursed } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
@@ -9,11 +10,19 @@ import { today } from '@/lib/util';
 import { Block, Row, Rule, Screen, T } from '@/ui/kit';
 
 export default function Flat() {
-  const { members, spends, entries, absences, products } = useHousehold();
+  const { members, spends, entries, absences, products, bills, billShares, billPayments, me } = useHousehold();
   const owed = unreimbursed(spends, entries);
   const now = today();
   const away = absences.filter((a) => a.from_date <= now && now <= a.to_date);
   const favourites = products.filter((p) => p.favourite);
+  // bills are their own ledger: what you owe other mates and what they owe you, never the kitty
+  const billsPay = toPay(bills, billShares, billPayments, me.id);
+  const billsBack = toGetBack(bills, billShares, billPayments, me.id);
+  const billsDetail = billsPay || billsBack
+    ? [billsPay && `pay ${formatINR(billsPay)}`, billsBack && `get back ${formatINR(billsBack)}`].filter(Boolean).join(' · ')
+    : bills.length
+      ? 'all settled'
+      : 'none yet';
 
   return (
     <Screen>
@@ -30,6 +39,13 @@ export default function Flat() {
           icon={{ ios: 'arrow.uturn.left', android: 'undo' }}
           detail={owed.length ? `${owed.length} · ${formatINR(owed.reduce((a, s) => a + s.total_paise, 0))}` : 'none'}
           onPress={() => router.push('/reimburse')}
+        />
+        <Rule />
+        <Row
+          label="Bills"
+          icon={{ ios: 'bolt', android: 'bolt' }}
+          detail={billsDetail}
+          onPress={() => router.push('/bills')}
         />
         <Rule />
         <Row
