@@ -19,7 +19,9 @@ export function cadenceLabel(d: Pick<Duty, 'weekdays' | 'every_days'>): string {
 }
 
 /** An instance is still open while nobody has recorded a done or a skip; a swap only moves it. */
-export const isOpen = (outcome: 'done' | 'skipped' | 'swapped' | null) => outcome === null || outcome === 'swapped';
+// Lives in the domain now: the notification cron needs the same answer the screen gives, and it
+// cannot import a React module. Re-exported so the screens' existing imports keep working.
+export { isOpen } from '@/domain/duties';
 
 export function useDuties() {
   const h = useHousehold();

@@ -1,7 +1,19 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDueOn, dueDates, donePoints, fairSharePoints, assignee, rota, standing, type Duty, type ChoreEvent } from './duties.ts';
+import {
+  isDueOn,
+  dueDates,
+  donePoints,
+  fairSharePoints,
+  assignee,
+  rota,
+  standing,
+  dueToday,
+  type Duty,
+  type DatedDuty,
+  type ChoreEvent,
+} from './duties.ts';
 import type { Member, Absence } from './kitty.ts';
 
 const ANCHOR = '2026-10-01';
@@ -219,4 +231,64 @@ test('a swap to a mate who is away does not stick', () => {
   assert.equal(assignee(d, '2026-10-06', abc, absences, swap, ANCHOR, [d]), 'a');
   const cDid = [...swap, ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-05' })];
   assert.equal(assignee(d, '2026-10-06', abc, absences, cDid, ANCHOR, [d]), 'c');
+});
+
+// ---------------------------------------------------------------- dueToday (notifications #1)
+
+const dated = (id: string, created_at = '2026-10-01T00:00:00Z'): DatedDuty => ({ ...daily(id), created_at });
+
+test('dueToday names one mate per push, with every duty they owe today', () => {
+  const duties = [dated('d1'), dated('d2')];
+  // Two duties, three mates: a and b each get one, and each is its own recipient.
+  assert.deepEqual(dueToday(duties, abc, [], [], '2026-10-01'), [
+    { memberId: 'a', dutyNames: ['d1'] },
+    { memberId: 'b', dutyNames: ['d2'] },
+  ]);
+  // One mate, two duties: ONE entry naming both, never two pushes that collapse each other by tag.
+  assert.deepEqual(dueToday(duties, [mate('a')], [], [], '2026-10-01'), [{ memberId: 'a', dutyNames: ['d1', 'd2'] }]);
+});
+
+test('dueToday drops an instance the moment it is settled — a reminder is never sent for done work', () => {
+  const duties = [dated('d1')];
+  assert.deepEqual(dueToday(duties, abc, [], [], '2026-10-01'), [{ memberId: 'a', dutyNames: ['d1'] }]);
+  for (const outcome of ['done', 'skipped'] as const) {
+    const settled = [ev({ duty_id: 'd1', member_id: 'a', outcome, due_on: '2026-10-01' })];
+    assert.deepEqual(dueToday(duties, abc, [], settled, '2026-10-01'), [], `${outcome} still earned a reminder`);
+  }
+  // A swap moves the reminder to whoever took it, and off the mate who handed it over.
+  const swapped = [ev({ duty_id: 'd1', member_id: 'a', outcome: 'swapped', to_member_id: 'b', due_on: '2026-10-01' })];
+  assert.deepEqual(dueToday(duties, abc, [], swapped, '2026-10-01'), [{ memberId: 'b', dutyNames: ['d1'] }]);
+  // Reverse the swap and it is a's turn again: the ledger's reversal rule reaches the notification too.
+  const undone = [...swapped, ev({ ...swapped[0], reverses_id: swapped[0].id })];
+  assert.deepEqual(dueToday(duties, abc, [], undone, '2026-10-01'), [{ memberId: 'a', dutyNames: ['d1'] }]);
+});
+
+test('dueToday agrees with the Duties tab: the anchor comes off created_at, in IST', () => {
+  // The tab anchors on the earliest duty's IST creation date (src/ui/duties.tsx). A duty created
+  // today is due today; an every-3-days duty is not due on the day after its anchor.
+  const every3 = { ...dated('d3'), every_days: 3 };
+  assert.deepEqual(dueToday([every3], [mate('a')], [], [], '2026-10-01'), [{ memberId: 'a', dutyNames: ['d3'] }]);
+  assert.deepEqual(dueToday([every3], [mate('a')], [], [], '2026-10-02'), []);
+  assert.deepEqual(dueToday([every3], [mate('a')], [], [], '2026-10-04'), [{ memberId: 'a', dutyNames: ['d3'] }]);
+  // created_at is a timestamptz read at the IST boundary, not UTC: 2026-10-04T19:00:00Z is already
+  // the 5th in Kolkata, so a duty created then anchors on the 5th and its every-3 cadence counts
+  // 10-05, 10-08 — not the 10-04, 10-07 a UTC reading would give.
+  const istBorn = { ...dated('d3', '2026-10-04T19:00:00Z'), every_days: 3 };
+  assert.deepEqual(dueToday([istBorn], [mate('a')], [], [], '2026-10-05'), [{ memberId: 'a', dutyNames: ['d3'] }]);
+  assert.deepEqual(dueToday([istBorn], [mate('a')], [], [], '2026-10-07'), []);
+  // The anchor is the EARLIEST duty's date, shared by all of them — so an older duty in the list
+  // shifts a newer one's cadence. That is what the tab does, and the push must not disagree with it.
+  assert.deepEqual(dueToday([istBorn, dated('d1')], [mate('a')], [], [], '2026-10-07'), [
+    { memberId: 'a', dutyNames: ['d1', 'd3'] },
+  ]);
+});
+
+test('dueToday skips an away mate and an inactive duty, so neither is nudged', () => {
+  const duties = [dated('d1')];
+  const absences: Absence[] = [{ member_id: 'a', from_date: '2026-10-01', to_date: '2026-10-03' }];
+  assert.deepEqual(dueToday(duties, abc, absences, [], '2026-10-01'), [{ memberId: 'b', dutyNames: ['d1'] }]);
+  // Nobody here at all: no recipient, and the cron must send nothing rather than crash.
+  assert.deepEqual(dueToday(duties, [mate('a')], absences, [], '2026-10-01'), []);
+  assert.deepEqual(dueToday([{ ...dated('d1'), active: false }], abc, [], [], '2026-10-01'), []);
+  assert.deepEqual(dueToday([], abc, [], [], '2026-10-01'), []);
 });

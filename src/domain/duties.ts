@@ -3,7 +3,7 @@
 // append-only events, deterministic ties by id. No randomness anywhere — the next turn is
 // always predictable. Rules: docs/DATA_MODEL.md § Duties.
 
-import type { Member, Absence } from './kitty.ts';
+import { istDate, type Member, type Absence } from './kitty.ts';
 
 export type Duty = {
   id: string;
@@ -185,6 +185,45 @@ export function rota(
     }
   }
   return out;
+}
+
+/**
+ * Is this instance still somebody's to do? A swap is NOT settled — it hands the turn over, and the
+ * mate it landed on still owes it. Only 'done' and 'skipped' close an instance.
+ */
+export const isOpen = (outcome: ChoreEvent['outcome'] | null): boolean => outcome === null || outcome === 'swapped';
+
+/** A duty as the database stores it. `created_at` is the rota's anchor: a duty is never due before it existed. */
+export type DatedDuty = Duty & { created_at: string };
+
+/**
+ * Today's still-open duty instances, grouped by whose turn it is. This is the recipient list for
+ * the "your duty is due today" notification (docs/NOTIFICATIONS.md #1), and it is the same list the
+ * Duties tab draws — which is the whole point of it living here. The anchor is derived inside, the
+ * way src/ui/duties.tsx derives it, so a push can never name a different mate than the screen does.
+ *
+ * `today` is an IST date (`istDate()`), not a UTC one: the 08:00 IST cron must ask about the day the
+ * flat is actually in. One entry per mate, never one per duty — two duties on the same day are one
+ * push naming both, because a second push would only collapse the first by tag.
+ */
+export function dueToday(
+  duties: DatedDuty[],
+  members: Member[],
+  absences: Absence[],
+  events: ChoreEvent[],
+  today: string,
+): { memberId: string; dutyNames: string[] }[] {
+  const anchor = duties.reduce((a, d) => (istDate(d.created_at) < a ? istDate(d.created_at) : a), today);
+  const byMember = new Map<string, string[]>();
+  for (const r of rota(duties, members, absences, events, today, 1, anchor)) {
+    // A done or skipped instance needs no reminder. A swapped one still does — `memberId` is
+    // already whoever it was swapped to, so the nudge follows the turn.
+    if (!isOpen(r.outcome) || !r.memberId) continue;
+    byMember.set(r.memberId, [...(byMember.get(r.memberId) ?? []), r.duty.name]);
+  }
+  return [...byMember]
+    .map(([memberId, dutyNames]) => ({ memberId, dutyNames }))
+    .sort((a, b) => (a.memberId < b.memberId ? -1 : 1));
 }
 
 /** Done vs fair share for everyone. Sorted by member id, never by score: this is not a leaderboard. */
