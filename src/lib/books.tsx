@@ -6,6 +6,9 @@ import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
+/** 'YYYY-MM-DD', n days back. Narrows the meal_plan read; nothing here depends on the timezone. */
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+
 export type Household = {
   id: string;
   name: string;
@@ -65,7 +68,19 @@ export type ShoppingRow = ManualItem & {
   created_at: string;
 };
 
-export type DutyRow = Duty & { household_id: string; created_at: string };
+// `plans_meals` is optional on purpose: a DB that predates 20261008094500 returns no such key, and
+// `undefined` reads as false, so the meals card simply never claims anyone is the planner.
+export type DutyRow = Duty & { household_id: string; created_at: string; plans_meals?: boolean };
+/** Not a ledger: one row per meal per day, rewritten in place. `plans_meals` says who may write it. */
+export type MealRow = {
+  id: string;
+  household_id: string;
+  date: string;
+  meal: 'lunch' | 'dinner';
+  text: string;
+  by: string;
+  written_at: string;
+};
 export type ChoreEventRow = ChoreEvent & { household_id: string; occurred_at: string; created_at: string };
 
 type Data = {
@@ -84,6 +99,7 @@ type Data = {
   closes: CloseRow[] | null; // null: the month_close table isn't there yet
   duties: DutyRow[];
   choreEvents: ChoreEventRow[];
+  meals: MealRow[];
 };
 
 type Ctx = {
@@ -100,7 +116,7 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents] =
+  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents, meals] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -125,6 +141,8 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('month_close').select('*').eq('household_id', h).order('month'),
       supabase.from('duty').select('*').eq('household_id', h).order('created_at'),
       supabase.from('chore_event').select('*').eq('household_id', h).order('due_on'),
+      // only the last few days: Home reads today, and nobody scrolls back through last month's dinners
+      supabase.from('meal_plan').select('*').eq('household_id', h).gte('date', daysAgo(3)).order('date'),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
@@ -147,6 +165,7 @@ async function load(userId: string): Promise<Data | null> {
     closes: closes.data ?? null,
     duties: duties.data ?? [],
     choreEvents: choreEvents.data ?? [],
+    meals: meals.data ?? [], // a flat whose DB predates 20261008094500 loses the meals card, nothing else
   };
 }
 
