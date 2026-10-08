@@ -2,7 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { Bill, BillPayment, BillShare } from '@/domain/bills';
-import type { ChoreEvent, Duty } from '@/domain/duties';
+import type { ChoreEvent, Duty, DutyMark } from '@/domain/duties';
 import type { Absence, Books, Close, PoolEntry, Source, Spend } from '@/domain/kitty';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
@@ -69,9 +69,9 @@ export type ShoppingRow = ManualItem & {
   created_at: string;
 };
 
-// `plans_meals` is optional on purpose: a DB that predates 20261008094500 returns no such key, and
-// `undefined` reads as false, so the meals card simply never claims anyone is the planner.
-export type DutyRow = Duty & { household_id: string; created_at: string; plans_meals?: boolean };
+// `plans_meals`, `group_size` and `roster` all live on Duty itself now (20261008094500 adds the
+// first, 20261008210000 the other two), so DutyRow adds only what the DB and the UI need.
+export type DutyRow = Duty & { household_id: string; created_at: string };
 /** Not a ledger: one row per meal per day, rewritten in place. `plans_meals` says who may write it. */
 export type MealRow = {
   id: string;
@@ -83,6 +83,18 @@ export type MealRow = {
   written_at: string;
 };
 export type ChoreEventRow = ChoreEvent & { household_id: string; occurred_at: string; created_at: string };
+export type DutyMarkRow = DutyMark & { id: string; household_id: string; created_at: string };
+export type DutyPhotoRow = {
+  id: string;
+  household_id: string;
+  duty_id: string;
+  due_on: string;
+  member_id: string;
+  raised_by: string;
+  path: string;
+  note: string | null;
+  created_at: string;
+};
 
 // Bills are their own ledger, with nothing in common with the kitty's rows: a payer, a share each,
 // and a payment per share until it's settled.
@@ -115,6 +127,8 @@ type Data = {
   billShares: BillShareRow[];
   billPayments: BillPaymentRow[];
   meals: MealRow[];
+  dutyMarks: DutyMarkRow[];
+  dutyPhotos: DutyPhotoRow[];
 };
 
 type Ctx = {
@@ -132,7 +146,7 @@ async function load(userId: string): Promise<Data | null> {
   if (!me) return null;
   const h = me.household_id as string;
   const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents,
-    bills, billShares, billPayments, meals] =
+    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -162,11 +176,14 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('bill_payment').select('*').eq('household_id', h).order('occurred_at'),
       // only the last few days: Home reads today, and nobody scrolls back through last month's dinners
       supabase.from('meal_plan').select('*').eq('household_id', h).gte('date', daysAgo(3)).order('date'),
+      supabase.from('duty_mark').select('*').eq('household_id', h).order('created_at'),
+      supabase.from('duty_photo').select('*').eq('household_id', h).order('created_at'),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
   // are not: a web build that reaches live before the migration does must degrade to "no stock",
-  // "nothing closed", "no duties", "no bills" or "no meals", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
+  // "nothing closed", "no duties", "no bills", "no meals" or "no photos", never to the create-a-flat
+  // screen (_layout routes `!!session && !data` to welcome).
   for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
@@ -188,6 +205,8 @@ async function load(userId: string): Promise<Data | null> {
     billShares: billShares.data ?? [],
     billPayments: billPayments.data ?? [],
     meals: meals.data ?? [], // a flat whose DB predates 20261008094500 loses the meals card, nothing else
+    dutyMarks: dutyMarks.data ?? [],
+    dutyPhotos: dutyPhotos.data ?? [],
   };
 }
 

@@ -69,7 +69,8 @@ function Routes() {
         <Stack.Screen name="fridge" options={{ headerShown: false }} />
         <Stack.Screen name="shopping" options={{ headerShown: false }} />
         {/* /fridge /shopping /stock are Redirects into the Kitchen tab: no header on the way through. */}
-        <Stack.Screen name="duties/manage" options={{ title: 'Manage duties' }} />
+        <Stack.Screen name="duties/manage" options={{ title: 'Duties' }} />
+        <Stack.Screen name="duties/edit" options={{ title: 'Edit duty' }} />
         <Stack.Screen name="import" options={{ presentation: 'modal', animation: 'slide_from_bottom', title: 'Read a bill' }} />
       </Stack.Protected>
     </Stack>
