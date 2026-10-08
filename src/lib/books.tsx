@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import type { ChoreEvent, Duty } from '@/domain/duties';
 import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
+import type { Mode } from '@/domain/notifications';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
@@ -20,6 +21,8 @@ export type MemberRow = {
   upi_vpa: string | null;
   joined_on: string;
   left_on: string | null;
+  avatar_path: string | null;
+  cover_path: string | null;
 };
 export type AbsenceRow = Absence & { id: string; created_at: string };
 export type SpendRow = Spend & { source: 'zepto' | 'local' | 'other'; store_name: string | null; created_at: string };
@@ -65,6 +68,9 @@ export type ShoppingRow = ManualItem & {
   created_at: string;
 };
 
+/** Only the triggers a mate has changed; an absent row is `defaultMode` (src/domain/notifications.ts). */
+export type PrefRow = { id: string; member_id: string; trigger: string; mode: Mode };
+
 export type DutyRow = Duty & { household_id: string; created_at: string };
 export type ChoreEventRow = ChoreEvent & { household_id: string; occurred_at: string; created_at: string };
 
@@ -84,6 +90,7 @@ type Data = {
   closes: CloseRow[] | null; // null: the month_close table isn't there yet
   duties: DutyRow[];
   choreEvents: ChoreEventRow[];
+  prefs: PrefRow[];
 };
 
 type Ctx = {
@@ -100,7 +107,7 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents] =
+  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents, prefs] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -125,11 +132,12 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('month_close').select('*').eq('household_id', h).order('month'),
       supabase.from('duty').select('*').eq('household_id', h).order('created_at'),
       supabase.from('chore_event').select('*').eq('household_id', h).order('due_on'),
+      supabase.from('notification_pref').select('id, member_id, trigger, mode').eq('household_id', h),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
   // are not: a web build that reaches live before the migration does must degrade to "no stock",
-  // "nothing closed" or "no duties", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
+  // "nothing closed", "no duties" or "every notification at its default", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
   for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
@@ -147,6 +155,7 @@ async function load(userId: string): Promise<Data | null> {
     closes: closes.data ?? null,
     duties: duties.data ?? [],
     choreEvents: choreEvents.data ?? [],
+    prefs: prefs.data ?? [],
   };
 }
 

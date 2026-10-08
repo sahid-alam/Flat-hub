@@ -250,7 +250,7 @@ function TopUpCard({
           />
         ) : (
           <T size={15} weight="600">
-            {first} hasn't added a UPI ID yet (Mates → your UPI ID).
+            {first} hasn&apos;t added a UPI ID yet (Profile → UPI ID).
           </T>
         ))}
       <OnyxPill
