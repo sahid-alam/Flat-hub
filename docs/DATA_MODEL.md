@@ -18,7 +18,7 @@ member_absence(id, household_id, member_id, from_date, to_date, created_at)  -- 
 ## Money: kitty
 
 ```
-spend      (id, household_id, source 'zepto'|'local'|'other', store_name,
+spend      (id, household_id, source 'zepto'|'blinkit'|'instamart'|'bigbasket'|'jiomart'|'local'|'other', store_name,
             paid_by → member, paid_from 'pool'|'personal',
             total_paise bigint, occurred_at, receipt_path null, extraction jsonb null,
             reverses_id null)
