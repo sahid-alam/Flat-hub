@@ -27,6 +27,15 @@ export default function Flat() {
   return (
     <Screen>
       <Block style={{ gap: 0, paddingVertical: 4 }}>
+        {/* Your own things live on Profile; everything below this row is the flat's business. Until
+            the nav puts an avatar in the home header, this is the door to it. */}
+        <Row
+          label="Your profile"
+          icon={{ ios: 'person.crop.circle', android: 'account_circle' }}
+          detail="UPI ID, photo, notifications"
+          onPress={() => router.push('/profile')}
+        />
+        <Rule />
         <Row
           label="Away"
           icon={{ ios: 'airplane', android: 'flight' }}
@@ -78,7 +87,8 @@ export default function Flat() {
         />
       </Block>
       <T size={13} soft>
-        Your own top-up, the quick add and the recent feed stay on the Kitty tab.
+        Your own top-up, the quick add and the recent feed stay on the Kitty tab. Your name, UPI ID, photo and
+        notification settings are on Profile.
       </T>
     </Screen>
   );

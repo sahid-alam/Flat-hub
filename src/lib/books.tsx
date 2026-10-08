@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Bill, BillPayment, BillShare } from '@/domain/bills';
 import type { ChoreEvent, Duty, DutyMark } from '@/domain/duties';
 import type { Absence, Books, Close, PoolEntry, Source, Spend } from '@/domain/kitty';
+import type { Mode } from '@/domain/notifications';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { supabase } from '@/lib/supabase';
 
@@ -24,6 +25,8 @@ export type MemberRow = {
   upi_vpa: string | null;
   joined_on: string;
   left_on: string | null;
+  avatar_path: string | null;
+  cover_path: string | null;
 };
 export type AbsenceRow = Absence & { id: string; created_at: string };
 export type SpendRow = Spend & { source: Source; store_name: string | null; created_at: string };
@@ -68,6 +71,9 @@ export type ShoppingRow = ManualItem & {
   done_by_spend_line_id: string | null;
   created_at: string;
 };
+
+/** Only the triggers a mate has changed; an absent row is `defaultMode` (src/domain/notifications.ts). */
+export type PrefRow = { id: string; member_id: string; trigger: string; mode: Mode };
 
 // `plans_meals`, `group_size` and `roster` all live on Duty itself now (20261008094500 adds the
 // first, 20261008210000 the other two), so DutyRow adds only what the DB and the UI need.
@@ -123,6 +129,7 @@ type Data = {
   closes: CloseRow[] | null; // null: the month_close table isn't there yet
   duties: DutyRow[];
   choreEvents: ChoreEventRow[];
+  prefs: PrefRow[];
   bills: BillRow[];
   billShares: BillShareRow[];
   billPayments: BillPaymentRow[];
@@ -146,7 +153,7 @@ async function load(userId: string): Promise<Data | null> {
   if (!me) return null;
   const h = me.household_id as string;
   const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents,
-    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos] =
+    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -178,12 +185,13 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('meal_plan').select('*').eq('household_id', h).gte('date', daysAgo(3)).order('date'),
       supabase.from('duty_mark').select('*').eq('household_id', h).order('created_at'),
       supabase.from('duty_photo').select('*').eq('household_id', h).order('created_at'),
+      supabase.from('notification_pref').select('id, member_id, trigger, mode').eq('household_id', h),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
   // are not: a web build that reaches live before the migration does must degrade to "no stock",
-  // "nothing closed", "no duties", "no bills", "no meals" or "no photos", never to the create-a-flat
-  // screen (_layout routes `!!session && !data` to welcome).
+  // "nothing closed", "no duties", "no bills", "no meals", "no photos" or "every notification at
+  // its default", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
   for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
@@ -201,6 +209,7 @@ async function load(userId: string): Promise<Data | null> {
     closes: closes.data ?? null,
     duties: duties.data ?? [],
     choreEvents: choreEvents.data ?? [],
+    prefs: prefs.data ?? [],
     bills: bills.data ?? [],
     billShares: billShares.data ?? [],
     billPayments: billPayments.data ?? [],
