@@ -52,10 +52,13 @@ create index on public.push_subscription (household_id, member_id);
 
 -- ---------------------------------------------------------------- notification_send
 
--- The whitelist that keeps "notifications for everything" from becoming spam. Only 8 of the 22
--- triggers in docs/NOTIFICATIONS.md may ever buzz a phone; the other 14 are an in-app count or the
--- one 19:00 digest. That split is prose in the doc and a CHECK here, because six people getting
--- ten pushes on an ordinary Tuesday turn them all off inside a fortnight, and on iPhone a revoked
+-- The whitelist that keeps "notifications for everything" from becoming spam. Only these 9 of the
+-- 22 triggers in docs/NOTIFICATIONS.md may ever buzz a phone; the other 13 are an in-app count or
+-- the one 19:00 digest. The doc recommends 8 and calls 'duty_offered' (#3) the one genuine
+-- judgement call — it is a broadcast to five people, which is the spam-prone shape, but an offer
+-- nobody sees is an offer nobody takes. It is here, and it is the first to demote if anyone
+-- complains. That split is prose in the doc and a CHECK here, because six people getting ten
+-- pushes on an ordinary Tuesday turn them all off inside a fortnight, and on iPhone a revoked
 -- permission is close to unrecoverable. Adding a trigger to this list is a deliberate migration,
 -- which is the point. B9 ships only 'duty_due_today'; the rest are the documented empty slots.
 create table public.notification_send (

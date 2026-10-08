@@ -112,7 +112,7 @@ select lives_ok($$ insert into public.notification_send (id, household_id, trigg
           'duty_due_today', '22222222-0000-7000-8000-000000000002', '2026-10-08') $$,
   'another mate on the same day is a new send');
 
--- Only 8 of the 22 triggers in docs/NOTIFICATIONS.md may ever buzz a phone. An in-app trigger
+-- Only 9 of the 22 triggers in docs/NOTIFICATIONS.md may ever buzz a phone. An in-app trigger
 -- wired to the push sender by accident is rejected by the database, not by somebody's memory.
 select throws_ok($$ insert into public.notification_send (id, household_id, trigger, member_id, due_on)
   values ('cccccccc-0000-7000-8000-000000000005', '11111111-0000-7000-8000-000000000001',

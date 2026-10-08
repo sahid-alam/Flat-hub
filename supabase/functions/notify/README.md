@@ -113,10 +113,12 @@ does.
 
 ## Rules this function enforces
 
-1. **Only the 8 push triggers.** `PUSH` in `index.ts` is the whole list; anything else is a 400, and
-   `notification_send`'s CHECK constraint says the same in the database. The other 14 triggers in
-   the doc are an in-app count or the single 19:00 digest. Six people getting ten pushes on an
-   ordinary Tuesday turn them all off inside a fortnight, and on iPhone that is close to permanent.
+1. **Only the push triggers.** `PUSH` in `index.ts` is the whole list — 9 of the doc's 22, being the
+   8 it recommends plus `duty_offered` (#3), which it calls the one genuine judgement call and the
+   first to demote. Anything else is a 400, and `notification_send`'s CHECK says the same in the
+   database. The other 13 triggers are an in-app count or the single 19:00 digest. Six people
+   getting ten pushes on an ordinary Tuesday turn them all off inside a fortnight, and on iPhone
+   that is close to permanent.
 2. **One push per member, per trigger, per day.** Claimed by inserting `notification_send` *before*
    sending; its unique `(household_id, trigger, member_id, due_on)` makes a `pg_cron` retry a no-op.
    The claim-first order is deliberate: a claim followed by a failed send loses a reminder, and a

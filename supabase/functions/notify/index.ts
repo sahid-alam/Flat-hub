@@ -9,11 +9,12 @@
 // THREE RULES THIS FILE ENFORCES, because they are the difference between notifications people
 // keep and notifications people switch off within a fortnight:
 //
-//  1. ONLY THE 8 PUSH TRIGGERS. `PUSH` below is the whole list. Everything else in the doc's table
-//     of 22 is an in-app count or the single 19:00 digest, and a request to push one is a 400.
-//     notification_send's CHECK constraint says the same thing in the database. Six people getting
-//     ten pushes on an ordinary Tuesday is how you lose all six, and on iPhone a revoked
-//     permission is close to unrecoverable — so this list is hard to extend on purpose.
+//  1. ONLY THE PUSH TRIGGERS. `PUSH` below is the whole list: 9 of the doc's 22, being the 8 it
+//     recommends plus 'duty_offered' (#3), the one it calls a genuine judgement call and the first
+//     to demote. Everything else is an in-app count or the single 19:00 digest, and a request to
+//     push one is a 400. notification_send's CHECK constraint says the same in the database. Six
+//     people getting ten pushes on an ordinary Tuesday is how you lose all six, and on iPhone a
+//     revoked permission is close to unrecoverable — so this list is hard to extend on purpose.
 //  2. ONE PUSH PER MEMBER PER DAY PER TRIGGER. Claimed by inserting notification_send first; its
 //     unique (household_id, trigger, member_id, due_on) turns a pg_cron retry into a no-op.
 //  3. NEVER NOTIFY THE ACTOR. Not reachable yet — the one shipped trigger has no actor — but every
@@ -35,7 +36,7 @@ import type { Absence, Member } from '../../../src/domain/kitty.ts';
 /** Client-generated UUIDv7 for every row, same as the app (CLAUDE.md): a retry is idempotent. */
 const newId = (): string => uuidv7(crypto.getRandomValues(new Uint8Array(16)));
 
-/** The only triggers allowed to buzz a phone. Rule 1. */
+/** The only triggers allowed to buzz a phone. Rule 1. 'duty_offered' is the judgement call. */
 const PUSH = new Set([
   'duty_due_today',
   'duty_not_ticked',
