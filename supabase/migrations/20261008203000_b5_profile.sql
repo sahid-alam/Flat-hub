@@ -40,7 +40,16 @@ create table public.notification_pref (
   id uuid primary key, -- client-generated UUIDv7, like every other row
   household_id uuid not null references public.household (id),
   member_id uuid not null,
-  trigger text not null check (trigger ~ '^[a-z][a-z0-9_]{2,39}$'),
+  -- Spelled out rather than pattern-matched, so a typo in B9's sender fails loudly instead of
+  -- silently reading the default forever. src/domain/notifications.test.ts fails if the two lists
+  -- ever drift apart.
+  trigger text not null check (trigger in (
+    'duty_due_today', 'duty_not_ticked', 'duty_partner_pending', 'duty_offered', 'duty_offer_claimed',
+    'duty_offer_unclaimed', 'duty_vouched', 'meal_plan_due',
+    'topup_not_in', 'reimbursed', 'month_ready_to_close', 'topup_recorded', 'kitty_low',
+    'spend_reversed', 'month_closed',
+    'lot_expiring', 'lot_expired', 'stock_below_min', 'import_needs_putaway', 'shopping_added',
+    'mate_joined', 'marked_away')),
   mode text not null check (mode in ('sound', 'silent', 'off')),
   updated_at timestamptz not null default now(),
   unique (household_id, member_id, trigger), -- the upsert target
