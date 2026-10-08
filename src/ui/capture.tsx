@@ -197,7 +197,7 @@ export function ReadingSkeleton({ what }: { what: string }) {
           <Icon name={{ ios: 'doc.text', android: 'description' }} size={22} color={c.muted} />
         </View>
         <View style={{ flex: 1, gap: 2 }} accessibilityLiveRegion="polite" role="status">
-          <T weight="700">Zepto order</T>
+          <T weight="700">The bill</T>
           <T size={15} soft>
             Reading {what}…
           </T>

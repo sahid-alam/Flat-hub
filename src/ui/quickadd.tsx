@@ -86,7 +86,7 @@ export function QuickAdd() {
       )}
       <Rule />
       <Row
-        label="Import a Zepto order"
+        label="Read a bill"
         icon={{ ios: 'doc.viewfinder', android: 'receipt_long' }}
         onPress={() => router.push('/import')}
       />
