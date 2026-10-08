@@ -4,7 +4,7 @@
 // Zopa's snapshot block as the three tiles.
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
-import { Block, Hero, Icon, Rule, T, useInk, usePalette } from '@/ui/kit';
+import { Block, Hero, Icon, Rule, T, tokens, useInk, usePalette } from '@/ui/kit';
 
 /** Screen gutter (16 each side) and the two 8pt gaps between three tiles, then the tile's padding. */
 const tileInnerWidth = (screen: number) => (Math.min(screen, 560) - 32 - 16) / 3 - 24;
@@ -36,7 +36,7 @@ export function StatTile({
   const c = usePalette();
   const { width } = useWindowDimensions();
   // A brass tile carries onyx ink in both modes, exactly as a brass Block does.
-  const ink = brass ? { ink: c.onAccent, muted: '#3A342B' } : { ink: c.ink, muted: c.muted };
+  const ink = brass ? { ink: c.onAccent, muted: tokens.block.onyxMuted } : { ink: c.ink, muted: c.muted };
   const body = (
     <>
       <T size={11} weight="800" color={ink.muted} numberOfLines={2} style={st.cap}>

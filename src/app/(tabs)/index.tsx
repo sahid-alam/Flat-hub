@@ -41,6 +41,8 @@ const MONTHS = [
 ];
 const EXPIRING_WITHIN = 2; // today, tomorrow, the day after: what "needs using" honestly covers
 const RECENT = 4;
+/** Mates are called by their first name everywhere on Home, as the concept draws it. */
+const first = (full: string) => full.split(' ')[0];
 const shiftDay = (date: string, days: number) =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -101,7 +103,7 @@ export default function Home() {
   const todayDuties: TodayDuty[] = todays.map((r) => ({
     key: `${r.duty.id}|${r.date}`,
     name: r.duty.name,
-    who: r.memberId === me.id ? 'Your turn' : r.memberId ? name(r.memberId) : 'Nobody free',
+    who: r.memberId === me.id ? 'Your turn' : r.memberId ? first(name(r.memberId)) : 'Nobody free',
     mine: r.memberId === me.id,
     done: r.outcome === 'done',
   }));
@@ -132,7 +134,7 @@ export default function Home() {
   const plansMeals = new Set(duties.filter((d) => d.plans_meals).map((d) => d.id));
   const mealRows = todays.filter((r) => plansMeals.has(r.duty.id) && r.memberId);
   const youPlanMeals = mealRows.some((r) => r.memberId === me.id);
-  const planners = [...new Set(mealRows.map((r) => name(r.memberId!)))];
+  const planners = [...new Set(mealRows.map((r) => first(name(r.memberId!))))];
 
   // ---------------------------------------------------------------- the summary
   const current = members.filter((m) => !m.left_on || m.left_on.slice(0, 7) >= month);
@@ -149,12 +151,12 @@ export default function Home() {
       ...new Set(
         todays
           .filter((r) => r.memberId !== me.id && myToday.some((o) => o.duty.id === r.duty.id && o.date === r.date))
-          .map((r) => name(r.memberId!)),
+          .map((r) => first(name(r.memberId!))),
       ),
     ],
     othersDutiesToday: todays
       .filter((r) => r.memberId && r.memberId !== me.id)
-      .map((r) => ({ duty: r.duty.name.toLowerCase(), who: name(r.memberId!) })),
+      .map((r) => ({ duty: r.duty.name.toLowerCase(), who: first(name(r.memberId!)) })),
     youPlanMeals,
     expiring: soon.map((l) => ({ name: productName(l.product_id), daysLeft: daysLeft(l.expiry_date, nowIso) ?? 0 })),
     othersNotToppedUp: current.filter((m) => m.id !== me.id && !toppedUp.has(m.id)).length,
@@ -163,7 +165,6 @@ export default function Home() {
     alert,
   });
 
-  const first = (full: string) => full.split(' ')[0];
   const holderFirst = holder ? first(holder.display_name) : null;
   const upi =
     holder?.upi_vpa && topup
