@@ -6,28 +6,31 @@ import {
   Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope';
 import { Righteous_400Regular } from '@expo-google-fonts/righteous';
-import { DarkTheme, DefaultTheme, ThemeProvider, router } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider, router, type ErrorBoundaryProps } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Pressable, useColorScheme } from 'react-native';
+import { Pressable, View, useColorScheme } from 'react-native';
 
 import { BooksProvider, useBooks } from '@/lib/books';
 import '@/lib/invite'; // captures an invite code from the opening URL before the auth redirect
-import { Icon, UI, usePalette } from '@/ui/kit';
+import { Block, Icon, MagnetButton, T, UI, usePalette } from '@/ui/kit';
 import { Stack } from '@/ui/stack'; // platform split: native stack on the APK, the JS card stack on web, so screens animate at all
 
 SplashScreen.preventAutoHideAsync();
 
 function Routes() {
-  const { session, data } = useBooks();
+  const { session, data, reload, loadError } = useBooks();
   const c = usePalette();
-  const ready = session === null || (session && data !== undefined);
+  // A failed read counts as ready: the splash has to lift either way, or a dropped connection on
+  // the first open is indistinguishable from a hung app.
+  const ready = session === null || (session && (data !== undefined || loadError !== null));
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
   }, [ready]);
   if (!ready) return null;
+  if (loadError && data === undefined) return <Unreachable detail={loadError} onRetry={reload} />;
 
   return (
     <Stack
@@ -96,6 +99,66 @@ function Back() {
       ]}>
       <Icon name={{ ios: 'chevron.left', android: 'chevron_left' }} size={22} />
     </Pressable>
+  );
+}
+
+/** The kitty's own tables did not come back. Not a crash — the connection, usually — so it says so
+ *  and offers the one thing that helps, rather than a splash screen that never lifts. */
+function Unreachable({ detail, onRetry }: { detail: string; onRetry: () => Promise<void> }) {
+  const c = usePalette();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.ground, justifyContent: 'center', padding: 24, gap: 16 }}>
+      <T size={24} weight="800">
+        Can&apos;t reach the flat
+      </T>
+      <T size={16} soft>
+        FlatHub could not load the kitty. This is almost always the connection — nothing has been
+        lost, and nothing has changed.
+      </T>
+      <Block tone="raised">
+        <T size={13} soft>
+          {detail}
+        </T>
+      </Block>
+      <MagnetButton label="Try again" color="brass" onPress={() => void onRetry()} />
+    </View>
+  );
+}
+
+/**
+ * The last line before a blank screen. Expo Router renders this for any error thrown while
+ * rendering anything beneath the root route, and hands back `retry` to re-render the tree.
+ *
+ * It exists because of a real one: /bills/new threw out of its render body on a bill dated before
+ * the flat signed up, and with nothing to catch it the throw unwound past the Stack and left a
+ * white page with no way back but a reload. That particular throw is fixed, but "any uncaught
+ * render error takes the whole app down and says nothing" is the standing hazard, and six people
+ * on their phones cannot open a console to find out what happened.
+ *
+ * ErrorBoundary must be a plain export named exactly this — Expo Router looks for it by name. The
+ * body is a function component so it can still use the palette; the class that catches cannot.
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const c = usePalette();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.ground, justifyContent: 'center', padding: 24, gap: 16 }}>
+      <T size={24} weight="800">
+        That screen broke
+      </T>
+      <T size={16} soft>
+        Nothing you typed was saved, and nothing in the kitty has changed. Try again, and if it keeps
+        happening tell Sahid what you were doing.
+      </T>
+      <Block tone="raised">
+        <T size={13} soft>
+          {error?.message ?? 'Unknown error'}
+        </T>
+      </Block>
+      <MagnetButton label="Try again" color="brass" onPress={() => void retry()} />
+      {typeof window !== 'undefined' && (
+        <MagnetButton label="Reload FlatHub" onPress={() => window.location.reload()} />
+      )}
+    </View>
   );
 }
 

@@ -27,8 +27,19 @@ export default function AddBill() {
 
   const paise = parseRupees(amount);
   const sharing = splitMembers(members, date);
-  const shares = paise ? splitBill(paise, sharing.map((m) => m.id)) : null;
-  const ready = !!paise && label.trim().length > 0 && sharing.length > 0;
+  // `sharing.length &&` is load-bearing: splitBill of nobody is allocate() with no weights, which
+  // THROWS, and this line is the render body rather than the try/catch around save(). A bill dated
+  // before everyone's joined_on — September's electricity, typed on the first evening Bills exists
+  // — used to take the whole app down with it.
+  const shares = paise && sharing.length ? splitBill(paise, sharing.map((m) => m.id)) : null;
+  // The button says what is missing rather than sitting grey and silent (DESIGN.md rule 2).
+  const blocker = !label.trim().length
+    ? 'Name the bill first'
+    : !paise
+      ? 'Enter the amount'
+      : !sharing.length
+        ? 'Nobody was in the flat on that date'
+        : null;
 
   async function save() {
     setBusy(true);
@@ -76,9 +87,9 @@ export default function AddBill() {
       </T>
       <ErrorText error={error} />
       <MagnetButton
-        label={busy ? 'Saving…' : paise ? `Add ${formatINR(paise)} bill` : 'Add bill'}
+        label={busy ? 'Saving…' : (blocker ?? `Add ${formatINR(paise!)} bill`)}
         color="brass"
-        disabled={busy || !ready}
+        disabled={busy || blocker !== null}
         onPress={save}
       />
     </Screen>

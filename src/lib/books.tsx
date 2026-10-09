@@ -144,6 +144,9 @@ type Ctx = {
   data: Data | null | undefined; // null: signed in but no household yet
   books: Books | null;
   reload: () => Promise<void>;
+  /** The last read that failed outright. `data` stays undefined, so without this the splash never
+   *  lifts: a blip on the hotel wifi looked exactly like an app that had hung. */
+  loadError: string | null;
 };
 
 const BooksContext = createContext<Ctx | null>(null);
@@ -230,17 +233,32 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const userId = session?.user.id;
+  // Every caller of load() goes through here, so there is one place a failed read can be caught.
+  // The kitty's seven tables are fatal by design — a flat with no members is not a flat — but
+  // "fatal" has to mean a sentence and a button, not a splash screen that never lifts.
   const reload = useCallback(async () => {
-    if (userId) setData(await load(userId));
+    if (!userId) return;
+    try {
+      setData(await load(userId));
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
   }, [userId]);
   useEffect(() => {
     if (!userId) return;
     let live = true;
-    load(userId).then((d) => live && setData(d));
+    load(userId).then(
+      (d) => live && (setData(d), setLoadError(null)),
+      (e: unknown) => live && setLoadError(e instanceof Error ? e.message : String(e)),
+    );
     return () => {
       live = false;
       setData(undefined); // signed out or switched user: forget the old flat
+      setLoadError(null);
     };
   }, [userId]);
 
@@ -284,7 +302,9 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     [data],
   );
 
-  return <BooksContext.Provider value={{ session, data, books, reload }}>{children}</BooksContext.Provider>;
+  return (
+    <BooksContext.Provider value={{ session, data, books, reload, loadError }}>{children}</BooksContext.Provider>
+  );
 }
 
 export function useBooks() {
