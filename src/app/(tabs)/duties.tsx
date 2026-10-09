@@ -462,7 +462,7 @@ export default function Duties() {
             {yesterday.flatMap((r) => r.slots.filter((s) => missed(s, r.date, now)).map((s) => missedRow(r, s)))}
             <T size={13} soft style={{ paddingTop: 8 }}>
               A missed duty is worked out from the schedule, never written down. It earns no credit, and nothing is
-              owed for it.
+              charged for it.
             </T>
           </Block>
         )}
