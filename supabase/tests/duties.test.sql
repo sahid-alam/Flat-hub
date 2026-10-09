@@ -4,7 +4,7 @@
 -- older than two months is purged.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(46);
+select plan(49);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -93,9 +93,11 @@ select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, m
           'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'done',
           '22222222-0000-7000-8000-000000000002', '2026-10-08') $$,
   '23514', null, 'only a swap carries a to_member_id');
+-- 'skipped' on purpose: a 'done' row naming somebody else is now stopped earlier, by
+-- check_chore_claimable, and this assertion is about the composite FK underneath it.
 select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on)
   values ('bbbbbbbb-0000-7000-8000-000000000006', '11111111-0000-7000-8000-000000000001',
-          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000003', 'done', '2026-10-08') $$,
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000003', 'skipped', '2026-10-08') $$,
   '23503', null, 'a chore event cannot name another household''s member');
 
 -- ---------------------------------------------------------------- insert-only ledger
@@ -126,11 +128,14 @@ select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, m
           '2026-10-01', 'bbbbbbbb-0000-7000-8000-000000000009') $$,
   '23514', null, 'a reversal of a reversal is impossible');
 
--- a swapped row reverses too, to_member_id and all
+-- a swapped row reverses too, to_member_id and all. Rhea writes it: a claim is the taker tapping,
+-- and check_chore_claimable now says so.
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
 insert into public.chore_event (id, household_id, duty_id, member_id, outcome, to_member_id, due_on)
   values ('bbbbbbbb-0000-7000-8000-00000000000b', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'swapped',
           '22222222-0000-7000-8000-000000000002', '2026-10-12');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
 select lives_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, to_member_id, due_on, reverses_id)
   values ('bbbbbbbb-0000-7000-8000-00000000000c', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'swapped',
@@ -174,11 +179,33 @@ insert into public.duty_mark (id, household_id, duty_id, due_on, member_id, kind
   values ('cccccccc-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-15', '22222222-0000-7000-8000-000000000001',
           'offer', '22222222-0000-7000-8000-000000000001');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
 select lives_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, to_member_id, due_on)
   values ('bbbbbbbb-0000-7000-8000-000000000012', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'swapped',
           '22222222-0000-7000-8000-000000000002', '2026-10-15') $$,
   'once the slot is offered, another mate can take it');
+-- …and only by the mate taking it. Ansh cannot hand his slot to Rhea on her behalf.
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
+select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, to_member_id, due_on)
+  values ('bbbbbbbb-0000-7000-8000-000000000013', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'swapped',
+          '22222222-0000-7000-8000-000000000002', '2026-10-15') $$,
+  '23514', null, 'a duty cannot be pushed onto a mate who did not tap to take it');
+
+-- ---------------------------------------------------------------- B4: you tick your own duty
+-- Whose TURN it is lives in assignees() in TypeScript and cannot be checked here. Who is TICKING
+-- can be, and without it the publishable key in the web bundle is enough to farm duty points.
+select lives_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on)
+  values ('bbbbbbbb-0000-7000-8000-000000000014', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'done',
+          '2026-10-18') $$,
+  'a mate can tick their own duty');
+select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on)
+  values ('bbbbbbbb-0000-7000-8000-000000000015', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000002', 'done',
+          '2026-10-18') $$,
+  '23514', null, 'a mate cannot tick a duty in somebody else''s name');
 
 -- ---------------------------------------------------------------- B4: duty_mark
 
@@ -259,9 +286,11 @@ select is((select count(*) from public.duty) + (select count(*) from public.chor
 select throws_ok($$ insert into public.duty (id, household_id, name, every_days)
   values ('aaaaaaaa-0000-7000-8000-000000000007', '11111111-0000-7000-8000-000000000001', 'Sneaky', 1) $$,
   '42501', null, 'a non-member cannot insert a duty');
+-- 'skipped' again: a 'done' row in somebody else's name is refused by check_chore_claimable before
+-- RLS is reached, and the thing under test here is RLS.
 select throws_ok($$ insert into public.chore_event (id, household_id, duty_id, member_id, outcome, due_on)
   values ('bbbbbbbb-0000-7000-8000-00000000000d', '11111111-0000-7000-8000-000000000001',
-          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'done', '2026-10-01') $$,
+          'aaaaaaaa-0000-7000-8000-000000000001', '22222222-0000-7000-8000-000000000001', 'skipped', '2026-10-01') $$,
   '42501', null, 'a non-member cannot insert a chore event');
 select is((select count(*) from public.duty_mark) + (select count(*) from public.duty_photo), 0::bigint,
   'a non-member reads neither offers, vouches nor photos');

@@ -79,19 +79,52 @@ create index on public.duty_photo (duty_id);
 
 -- ---------------------------------------------------------------- nobody is given a duty
 
--- "Nobody is ever given a duty without tapping to take it." A 'swapped' row is a CLAIM, so it needs an
--- offer on that exact slot to answer. Without this, any mate could post a swap pointing at anyone and
--- dump a chore on them. Enforced here rather than in the CHECK, so the ledger's constraint is untouched.
--- A reversal is exempt: it mirrors a row that was already legitimate.
+-- Two rules about who may append what to the chore ledger. Both are enforced here rather than in a
+-- CHECK, because both need to look at another row, and a reversal is exempt from both: it mirrors a
+-- row that was already legitimate.
+--
+-- 1. "Nobody is ever given a duty without tapping to take it." A 'swapped' row is a CLAIM, so it
+--    needs an offer on that exact slot to answer, and the mate taking it must be the one tapping.
+--    Without this, any mate could post a swap pointing at anyone and dump a chore on them.
+-- 2. YOU TICK YOUR OWN DUTY, NOBODY ELSE'S. Whose turn it is lives in assignees() in TypeScript and
+--    cannot be checked here without a second copy of the rota (see the header of B9's migration for
+--    why that is a bad trade). But WHO IS TICKING is knowable in SQL, and without it the publishable
+--    key in the web bundle is enough to post 'done' rows for any mate, any duty, any date, which the
+--    chore_points trigger then dutifully prices. Duty standing is exactly the thing six flatmates
+--    argue about, and the ledger is append-only, so a farmed row is permanent and has to be reversed
+--    by hand. duty_mark's own `(kind = 'offer') = (by_member_id = member_id)` CHECK shows the shape
+--    was always intended; 'done' was simply the gap.
+--
+-- `auth.uid() is null` means nobody is claiming to be anybody — the service role, a psql session, a
+-- migration backfill — and those are allowed through. supabase/seed.sql is safe twice over: it runs
+-- as postgres with no JWT, AND under `session_replication_role = replica`, which skips triggers.
 create function private.check_chore_claimable() returns trigger
 language plpgsql set search_path = '' as $$
+declare
+  caller uuid = (select auth.uid());
 begin
-  if new.outcome = 'swapped' and new.reverses_id is null and not exists (
-    select 1 from public.duty_mark m
-    where m.household_id = new.household_id and m.kind = 'offer'
-      and m.duty_id = new.duty_id and m.due_on = new.due_on and m.member_id = new.member_id
+  if new.reverses_id is null and new.outcome = 'swapped' then
+    if not exists (
+      select 1 from public.duty_mark m
+      where m.household_id = new.household_id and m.kind = 'offer'
+        and m.duty_id = new.duty_id and m.due_on = new.due_on and m.member_id = new.member_id
+    ) then
+      raise exception 'a duty can only be taken after it is offered' using errcode = '23514';
+    end if;
+    -- You take a duty; you are not handed one. The claimer must be the caller.
+    if caller is not null and not exists (
+      select 1 from public.member m
+      where m.id = new.to_member_id and m.household_id = new.household_id and m.user_id = caller
+    ) then
+      raise exception 'a duty can only be taken by the mate taking it' using errcode = '23514';
+    end if;
+  end if;
+
+  if new.reverses_id is null and new.outcome = 'done' and caller is not null and not exists (
+    select 1 from public.member m
+    where m.id = new.member_id and m.household_id = new.household_id and m.user_id = caller
   ) then
-    raise exception 'a duty can only be taken after it is offered' using errcode = '23514';
+    raise exception 'you can only tick your own duty' using errcode = '23514';
   end if;
   return new;
 end $$;

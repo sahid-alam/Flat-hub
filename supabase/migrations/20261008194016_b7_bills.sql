@@ -82,6 +82,21 @@ end $$;
 create constraint trigger bill_shares_balance after insert on public.bill_share
   deferrable initially deferred for each row execute function private.check_bill_shares();
 
+-- 1b. …and a bill HAS shares. The trigger above hangs off bill_share, so with zero share rows it
+-- never fires and the sum invariant has a hole at exactly zero: a bill with a total that nobody
+-- owes a paisa on. Deferred too, so add_bill can write the bill before its shares in one
+-- transaction and still be checked at commit.
+create function private.check_bill_has_shares() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if not exists (select 1 from public.bill_share s where s.bill_id = new.id) then
+    raise exception 'a bill must have at least one share' using errcode = '23514';
+  end if;
+  return null;
+end $$;
+create constraint trigger bill_has_shares after insert on public.bill
+  deferrable initially deferred for each row execute function private.check_bill_has_shares();
+
 -- 2. A reversal mirrors its target exactly, so the pair nets to zero.
 create function private.check_bill_payment_reversal() returns trigger
 language plpgsql set search_path = '' as $$

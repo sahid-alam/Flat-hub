@@ -2,7 +2,7 @@
 -- and RLS. A bill is a payer with per-person shares; it never touches the kitty.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(15);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'sahid@test'),
@@ -32,6 +32,13 @@ select throws_ok($$ select public.add_bill(
   '[{"id":"77777777-0000-7000-8000-000000000003","member_id":"22222222-0000-7000-8000-000000000001","paise":45000},
     {"id":"77777777-0000-7000-8000-000000000004","member_id":"22222222-0000-7000-8000-000000000002","paise":44999}]');
   set constraints all immediate $$, '23514', null, 'shares a paisa short of the total are rejected');
+
+-- The sum trigger hangs off bill_share, so with no share rows at all it never fires. Without its
+-- companion that is a bill with a total nobody owes a paisa on.
+select throws_ok($$ select public.add_bill(
+  '{"id":"66666666-0000-7000-8000-00000000000e","household_id":"11111111-0000-7000-8000-000000000001","label":"Nobody''s","total_paise":60000,"paid_by":"22222222-0000-7000-8000-000000000001"}',
+  '[]');
+  set constraints all immediate $$, '23514', null, 'a bill with no shares at all is rejected');
 
 select lives_ok($$ select public.add_bill(
   '{"id":"66666666-0000-7000-8000-000000000001","household_id":"11111111-0000-7000-8000-000000000001","label":"Wi-Fi","total_paise":60000,"paid_by":"22222222-0000-7000-8000-000000000001","occurred_on":"2026-10-05"}',
