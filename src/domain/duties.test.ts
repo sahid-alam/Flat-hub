@@ -21,6 +21,7 @@ import {
 import type { Member, Absence } from './kitty.ts';
 
 const ANCHOR = '2026-10-01';
+const text = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const mate = (id: string): Member => ({ id, joined_on: '2026-01-01', left_on: null });
 const abc = ['a', 'b', 'c'].map(mate);
 const six = ['a', 'b', 'c', 'd', 'e', 'f'].map(mate);
@@ -344,6 +345,33 @@ test('credit is priced on the event, so re-pricing a duty never re-prices past w
   assert.equal(one(dear, '2026-10-02', abc, [], done, ANCHOR, [dear]), 'b');
 });
 
+test('re-pricing a duty does not re-price the fair share of work already finished', () => {
+  // Five daily instances, all ticked by a, snapshotted at 2 points each. Then the flat decides the
+  // duty is worth 10. donePoints reads the snapshot and does not move; fairSharePoints must not
+  // move either, or the mate who did the work is suddenly in debt for having done it.
+  const cheap = { ...daily('d1', 2), every_days: 1 };
+  const dates = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05'];
+  const done = dates.map((due_on) => ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on, points: 2 }));
+  const dear = { ...cheap, effort_points: 10 };
+
+  const before = fairSharePoints([cheap], abc, [], ANCHOR, '2026-10-05', ANCHOR, done);
+  const after = fairSharePoints([dear], abc, [], ANCHOR, '2026-10-05', ANCHOR, done);
+  assert.deepEqual(after, before, 're-pricing moved the fair share of finished work');
+  assert.equal(donePoints(done, 'a'), 10); // five instances at the price they were done at
+
+  // and the deficit that drives the rota stays where it was: a is ahead, not 6.3 points behind.
+  for (const id of ['a', 'b', 'c']) {
+    const deficit = (after[id] ?? 0) - donePoints(done, id);
+    assert.equal(deficit, (before[id] ?? 0) - donePoints(done, id));
+    if (id === 'a') assert.ok(deficit < 0, `the mate who did the work is ${deficit} behind`);
+  }
+
+  // An instance nobody has touched is still worth what the duty is worth now — that is the price
+  // it will snapshot at the moment somebody ticks it.
+  const untouched = fairSharePoints([dear], abc, [], '2026-10-06', '2026-10-06', ANCHOR, done);
+  assert.deepEqual(untouched, { a: 10 / 3, b: 10 / 3, c: 10 / 3 });
+});
+
 test('two done rows for one slot pay once', () => {
   const twice = [
     ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-01' }),
@@ -395,6 +423,39 @@ test('a claim by a mate who is away does not stick', () => {
   // untouched 7th is c's.
   const aDid = [...claim, ev({ duty_id: 'd1', member_id: 'a', outcome: 'done', due_on: '2026-10-05' })];
   assert.equal(one(d, '2026-10-07', abc, absences, aDid, ANCHOR, [d]), 'c');
+});
+
+test('a mate already on a pair duty cannot take their own partner\'s half', () => {
+  const pair = { ...daily('d1', 2), group_size: 2 };
+  const [first, second] = assignees(pair, ANCHOR, six, [], [], ANCHOR, [pair]).map((s) => s.ownerId);
+
+  // `second` offers their half and `first` — the co-assignee — takes it. There is no turn to hand
+  // over: both halves stay where they were, so one tick cannot close the other mate's work.
+  const partner = [ev({ duty_id: 'd1', member_id: second, outcome: 'swapped', to_member_id: first, due_on: ANCHOR })];
+  const byOwner = (ss: ReturnType<typeof assignees>) => [...ss].sort((x, y) => text(x.ownerId, y.ownerId));
+  assert.deepEqual(byOwner(assignees(pair, ANCHOR, six, [], partner, ANCHOR, [pair])), byOwner([
+    { ownerId: first, holderId: first, done: false },
+    { ownerId: second, holderId: second, done: false },
+  ]));
+
+  // `first` ticks once: their own half closes, the other does not, and they are paid once.
+  const ticked = [...partner, ev({ duty_id: 'd1', member_id: first, outcome: 'done', due_on: ANCHOR, points: 2 })];
+  const after = assignees(pair, ANCHOR, six, [], ticked, ANCHOR, [pair]);
+  assert.deepEqual(after.filter((s) => s.done).map((s) => s.ownerId), [first]);
+  assert.equal(donePoints(ticked, first), 2);
+  // and the half nobody did is missed the next day, as any unticked slot is
+  assert.ok(missed(after.find((s) => s.ownerId === second)!, ANCHOR, '2026-10-02'));
+
+  // An OUTSIDER taking the same offer still works: that is a real handover.
+  const outsider = six.map((m) => m.id).find((id) => id !== first && id !== second)!;
+  const taken = [ev({ duty_id: 'd1', member_id: second, outcome: 'swapped', to_member_id: outsider, due_on: ANCHOR })];
+  assert.deepEqual(
+    [...assignees(pair, ANCHOR, six, [], taken, ANCHOR, [pair])].sort((x, y) => text(x.ownerId, y.ownerId)),
+    [...[
+      { ownerId: first, holderId: first, done: false },
+      { ownerId: second, holderId: outsider, done: false },
+    ]].sort((x, y) => text(x.ownerId, y.ownerId)),
+  );
 });
 
 test('missing a duty does not push you down the queue', () => {
@@ -482,11 +543,15 @@ test('dueToday skips an away mate and an inactive duty, so neither is nudged', (
   assert.deepEqual(dueToday([], abc, [], [], '2026-10-01'), []);
 });
 
-test('dueToday nudges every holder of a pair duty, and names a double holder once', () => {
+test('dueToday nudges every holder of a pair duty', () => {
   const pair = { ...dated('d1'), group_size: 2 };
   const both = dueToday([pair], abc, [], [], '2026-10-01');
   assert.deepEqual(both.map((r) => r.memberId), ['a', 'b']); // two slots, two reminders
-  // b offers their half and a takes it: a now holds both halves and is named once, not twice.
-  const claim = [ev({ duty_id: 'd1', member_id: 'b', outcome: 'swapped', to_member_id: 'a', due_on: '2026-10-01' })];
-  assert.deepEqual(dueToday([pair], abc, [], claim, '2026-10-01'), [{ memberId: 'a', dutyNames: ['d1'] }]);
+  // b offers their half to their own partner a, which sticks to nobody: both are still reminded.
+  const partner = [ev({ duty_id: 'd1', member_id: 'b', outcome: 'swapped', to_member_id: 'a', due_on: '2026-10-01' })];
+  assert.deepEqual(dueToday([pair], abc, [], partner, '2026-10-01').map((r) => r.memberId), ['a', 'b']);
+  // an outsider taking b's half moves that reminder, and only that one.
+  const six6 = ['a', 'b', 'c', 'd'].map(mate);
+  const outside = [ev({ duty_id: 'd1', member_id: 'b', outcome: 'swapped', to_member_id: 'c', due_on: '2026-10-01' })];
+  assert.deepEqual(dueToday([pair], six6, [], outside, '2026-10-01').map((r) => r.memberId), ['a', 'c']);
 });

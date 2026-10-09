@@ -133,16 +133,27 @@ export function fairSharePoints(
   from: string,
   to: string,
   anchor: string,
+  events: ChoreEvent[] = [],
 ): Record<string, number> {
   const present = members.filter((m) => m.joined_on <= to && (m.left_on === null || from <= m.left_on));
   const out: Record<string, number> = Object.fromEntries(present.map((m) => [m.id, 0]));
+  // What each instance was WORTH, off the ledger. donePoints already reads the snapshot on the
+  // event, so without this the two halves of the deficit are priced differently: `done` stays
+  // frozen at what the work was worth and `fair` moves to whatever the duty costs today. Re-pricing
+  // a 2-point duty to 10 then swung five finished instances from 0.3 points ahead to 6.3 behind —
+  // a debt for chores already done, which the rota then re-shuffled on.
+  const priced = new Map<string, number>();
+  for (const e of live(events)) priced.set(`${e.duty_id}|${e.due_on}`, e.points);
   for (const d of duties.filter((d) => d.active)) {
     for (const date of dueDates(d, from, to, anchor)) {
       const here = present.filter((m) => onRoll(m, date) && !away(absences, m.id, date) && inRoster(d, m.id));
       if (!here.length) continue;
       // Three mates left and a duty for four hands out three lots of points, not four.
       const slots = Math.min(d.group_size, here.length);
-      for (const m of here) out[m.id] += (d.effort_points * slots) / here.length;
+      // An instance nobody has touched yet has no snapshot, so it is worth what the duty is worth
+      // now — which is also what it will snapshot as the moment anyone ticks it.
+      const price = priced.get(`${d.id}|${date}`) ?? d.effort_points;
+      for (const m of here) out[m.id] += (price * slots) / here.length;
     }
   }
   return out;
@@ -201,9 +212,15 @@ export function assignees(
   const owners = [...new Set([...recorded, ...base])].slice(0, Math.max(duty.group_size, recorded.length));
 
   return owners.map((ownerId) => {
-    const holderId = claim.get(ownerId) ?? ownerId;
-    // ponytail: one mate holding both halves of a pair duty ticks once and both halves read done.
-    // They earn the points once either way (donePoints is per slot key, and the key is the mate).
+    const taker = claim.get(ownerId);
+    // A claim by a mate who is ALREADY on this instance sticks to nobody — the same answer, and for
+    // the same reason, as a claim by a mate who is away: there is no turn to hand over, because
+    // they are holding one already. Without this, one mate ends up holding both halves of a pair
+    // duty, `done` is keyed per holder, and a single tick reads as both halves finished: they do
+    // the whole chore alone and are paid for half of it, permanently, with the shortfall showing
+    // up nowhere. The mate it robs is the one who covered for a flatmate, which is the exact
+    // behaviour the points exist to reward.
+    const holderId = taker && !owners.includes(taker) ? taker : ownerId;
     return { ownerId, holderId, done: inst.some((e) => e.outcome === 'done' && e.member_id === holderId) };
   });
 }
@@ -220,7 +237,7 @@ function pick(
 ): string[] {
   const can = members.filter((m) => onRoll(m, dueOn) && !away(absences, m.id, dueOn) && inRoster(duty, m.id));
   if (can.length === 0) return [];
-  const fair = fairSharePoints(duties, members, absences, anchor, dueOn, anchor);
+  const fair = fairSharePoints(duties, members, absences, anchor, dueOn, anchor, past);
   // Last day this mate did THIS duty; '' (never) sorts first, i.e. longest ago.
   const lastDid = (id: string) =>
     past
@@ -356,7 +373,7 @@ export function standing(
   anchor: string,
 ): { memberId: string; done: number; fair: number; deficit: number }[] {
   const window = live(events).filter((e) => from <= e.due_on && e.due_on <= to);
-  const fair = fairSharePoints(duties, members, absences, from, to, anchor);
+  const fair = fairSharePoints(duties, members, absences, from, to, anchor, events);
   return members
     .filter((m) => m.id in fair)
     .sort(byId)

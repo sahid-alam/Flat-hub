@@ -188,6 +188,10 @@ export default function Duties() {
     const isMissed = missed(slot, r.date, now);
     // Somebody took it: the offer is spent, so the row stops advertising itself.
     const claimed = slot.holderId !== slot.ownerId;
+    // Are you already on this instance, on some other half of it? Then this offer is not yours to
+    // take. The database cannot check this — it would need the rota, which lives in TypeScript on
+    // purpose (supabase/migrations/20261008220000_b9_notify.sql says why) — so the screen does.
+    const onThisAlready = r.slots.some((o) => o.ownerId !== slot.ownerId && o.holderId === me.id);
     const isOffered = !claimed && !slot.done && offered(dutyMarks, r.duty.id, r.date, slot.ownerId);
     const vouched = vouchers(dutyMarks, r.duty.id, r.date, slot.ownerId);
     const photos = dutyPhotos.filter(
@@ -220,14 +224,20 @@ export default function Duties() {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <T size={14} soft style={{ flex: 1 }}>
           {`${owner.split(' ')[0]} offered it · due ${dayLabel(r.date)}`}
+          {onThisAlready && ' · you are on this one too'}
         </T>
-        <Chip
-          label="Take it"
-          strong
-          busy={busy === `${card}:swapped`}
-          accessibilityLabel={`Take ${r.duty.name} from ${owner.split(' ')[0]}, due ${dayLabel(r.date)}`}
-          onPress={() => event(r, slot, 'swapped', me.id, `${r.duty.name} is yours — due ${dayLabel(r.date)}.`)}
-        />
+        {/* Not for a mate already holding the other half: there is no turn to hand over, and
+            assignees() would refuse the claim anyway (a partner's claim sticks to nobody). Saying
+            why beats a button that quietly does nothing. */}
+        {!onThisAlready && (
+          <Chip
+            label="Take it"
+            strong
+            busy={busy === `${card}:swapped`}
+            accessibilityLabel={`Take ${r.duty.name} from ${owner.split(' ')[0]}, due ${dayLabel(r.date)}`}
+            onPress={() => event(r, slot, 'swapped', me.id, `${r.duty.name} is yours — due ${dayLabel(r.date)}.`)}
+          />
+        )}
       </View>
     ) : (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
