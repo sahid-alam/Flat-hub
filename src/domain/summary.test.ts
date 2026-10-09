@@ -151,7 +151,7 @@ test('two mates on one duty and a third on another are not merged into one duty'
 
 test('a duty named the way the flat names it still reads as English', () => {
   // The flat's duties are "Dishes rota", "Bins out", "Kitchen floor" — bare nouns with no article.
-  // "Kabir has dishes rota" was shipped once; "is on" is the construction that survives all of them.
+  // "Jatin has dishes rota" was shipped once; "is on" is the construction that survives all of them.
   for (const duty of ['dishes rota', 'bins out', 'kitchen floor', 'water filter change']) {
     assert.equal(
       morningSummary(facts({ othersDutiesToday: [{ duty, who: 'Ansh' }] }))[0],

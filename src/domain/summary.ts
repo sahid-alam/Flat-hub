@@ -72,8 +72,8 @@ const list = (xs: string[]): string =>
 /** Your duties today, and the meal-planning consequence if you hold that duty. */
 function dutyLine(f: SummaryFacts): string | null {
   // "on <duty>" throughout, because a duty's name is whatever the flat typed — "dishes rota",
-  // "bins out", "kitchen floor". "You have dishes rota" and "Kabir has dishes rota" are not
-  // English; "you are on dishes rota" and "Kabir is on dishes rota" take a bare name and stay
+  // "bins out", "kitchen floor". "You have dishes rota" and "Jatin has dishes rota" are not
+  // English; "you are on dishes rota" and "Jatin is on dishes rota" take a bare name and stay
   // English for every one of them, without the template having to guess at an article.
   if (f.yourDutiesToday.length) {
     const who = f.withYouToday.length ? `You and ${list(f.withYouToday)} are` : 'You are';
