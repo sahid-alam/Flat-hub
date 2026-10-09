@@ -8,6 +8,7 @@ import type { Mode } from '@/domain/notifications';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
 import { refresh as refreshPush } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
+import { sayError } from '@/lib/util'; // a Supabase error is a plain object, so String(e) is '[object Object]'
 
 /** 'YYYY-MM-DD', n days back. Narrows the meal_plan read; nothing here depends on the timezone. */
 const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -245,7 +246,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       setData(await load(userId));
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
+      setLoadError(sayError(e));
     }
   }, [userId]);
   useEffect(() => {
@@ -253,7 +254,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     let live = true;
     load(userId).then(
       (d) => live && (setData(d), setLoadError(null)),
-      (e: unknown) => live && setLoadError(e instanceof Error ? e.message : String(e)),
+      (e: unknown) => live && setLoadError(sayError(e)),
     );
     return () => {
       live = false;
