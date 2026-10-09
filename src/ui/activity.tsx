@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
 
-import { istDate, unreimbursed } from '@/domain/kitty';
+import { istDate, SOURCE_LABEL, unreimbursed } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import { useHousehold, type EntryRow, type SpendRow } from '@/lib/books';
 import { newId } from '@/lib/id';
@@ -10,7 +10,7 @@ import { Chip, T, usePalette, type ChipKind } from '@/ui/kit';
 
 export type Item = { at: string; spend?: SpendRow; entry?: EntryRow };
 
-export const SOURCE: Record<SpendRow['source'], string> = { zepto: 'Zepto', local: 'Local', other: 'Other' };
+export { SOURCE_LABEL as SOURCE } from '@/domain/kitty'; // the label map lives with the enum
 
 /** Spends and pool entries, newest first, as one feed. */
 export function feed(spends: SpendRow[], entries: EntryRow[]): Item[] {
@@ -49,7 +49,7 @@ export function ActivitySlip({ item, onChanged, readOnly }: { item: Item; onChan
   const struck = isReversed || isReversal;
   if (item.spend) {
     const s = item.spend;
-    title = [SOURCE[s.source], s.store_name].filter(Boolean).join(' · ');
+    title = [SOURCE_LABEL[s.source], s.store_name].filter(Boolean).join(' · ');
     sub = name(s.paid_by);
     if (!struck) chip = s.paid_from === 'pool' ? 'pool' : unreimbursed([s], entries).length ? 'pending' : 'reimbursed';
     else sub += s.paid_from === 'pool' ? ' · from the kitty' : ' · own pocket';

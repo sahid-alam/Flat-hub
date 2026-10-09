@@ -43,7 +43,7 @@ items, both fees and the coupon came back correct, and the lines summed exactly 
 | `OLLAMA_API_KEY` | Ollama Cloud key. Required in production. |
 | `FLATHUB_EXTRACT_MODEL` | Model override. Defaults to `gemma4:31b`. Keep it to a free model from the table above. |
 | `FLATHUB_OLLAMA_URL` | Endpoint override. Defaults to `https://ollama.com/api/chat`. |
-| `FLATHUB_EXTRACT_MOCK` | `1` returns a fixed Zepto fixture when no key is set — for local work. |
+| `FLATHUB_EXTRACT_MOCK` | `1` returns a fixed Blinkit fixture when no key is set — for local work. |
 
 ## Deploy
 

@@ -123,7 +123,7 @@ export default function Spending() {
           </Block>
 
           <Block>
-            <SectionLabel>Zepto vs local</SectionLabel>
+            <SectionLabel>Where it came from</SectionLabel>
             <SplitBar
               rows={breakdown.bySource.map((r) => ({
                 label: SOURCE[r.source as keyof typeof SOURCE],

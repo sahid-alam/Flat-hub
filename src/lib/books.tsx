@@ -1,10 +1,17 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { ChoreEvent, Duty } from '@/domain/duties';
-import type { Absence, Books, Close, PoolEntry, Spend } from '@/domain/kitty';
+import type { Bill, BillPayment, BillShare } from '@/domain/bills';
+import type { ChoreEvent, Duty, DutyMark } from '@/domain/duties';
+import type { Absence, Books, Close, PoolEntry, Source, Spend } from '@/domain/kitty';
+import type { Mode } from '@/domain/notifications';
 import type { Lot, ManualItem, Move, Uom } from '@/domain/stock';
+import { refresh as refreshPush } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
+import { sayError } from '@/lib/util'; // a Supabase error is a plain object, so String(e) is '[object Object]'
+
+/** 'YYYY-MM-DD', n days back. Narrows the meal_plan read; nothing here depends on the timezone. */
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export type Household = {
   id: string;
@@ -20,9 +27,11 @@ export type MemberRow = {
   upi_vpa: string | null;
   joined_on: string;
   left_on: string | null;
+  avatar_path: string | null;
+  cover_path: string | null;
 };
 export type AbsenceRow = Absence & { id: string; created_at: string };
-export type SpendRow = Spend & { source: 'zepto' | 'local' | 'other'; store_name: string | null; created_at: string };
+export type SpendRow = Spend & { source: Source; store_name: string | null; created_at: string };
 export type LineRow = {
   id: string;
   spend_id: string;
@@ -65,8 +74,46 @@ export type ShoppingRow = ManualItem & {
   created_at: string;
 };
 
+/** Only the triggers a mate has changed; an absent row is `defaultMode` (src/domain/notifications.ts). */
+export type PrefRow = { id: string; member_id: string; trigger: string; mode: Mode };
+
+// `plans_meals`, `group_size` and `roster` all live on Duty itself now (20261008094500 adds the
+// first, 20261008210000 the other two), so DutyRow adds only what the DB and the UI need.
 export type DutyRow = Duty & { household_id: string; created_at: string };
+/** Not a ledger: one row per meal per day, rewritten in place. `plans_meals` says who may write it. */
+export type MealRow = {
+  id: string;
+  household_id: string;
+  date: string;
+  meal: 'lunch' | 'dinner';
+  text: string;
+  by: string;
+  written_at: string;
+};
 export type ChoreEventRow = ChoreEvent & { household_id: string; occurred_at: string; created_at: string };
+export type DutyMarkRow = DutyMark & { id: string; household_id: string; created_at: string };
+export type DutyPhotoRow = {
+  id: string;
+  household_id: string;
+  duty_id: string;
+  due_on: string;
+  member_id: string;
+  raised_by: string;
+  path: string;
+  note: string | null;
+  created_at: string;
+};
+
+// Bills are their own ledger, with nothing in common with the kitty's rows: a payer, a share each,
+// and a payment per share until it's settled.
+export type BillRow = Bill & { household_id: string; created_at: string };
+export type BillShareRow = BillShare & { id: string; household_id: string; created_at: string };
+export type BillPaymentRow = BillPayment & {
+  id: string;
+  household_id: string;
+  occurred_at: string;
+  note: string | null;
+};
 
 type Data = {
   household: Household;
@@ -84,6 +131,13 @@ type Data = {
   closes: CloseRow[] | null; // null: the month_close table isn't there yet
   duties: DutyRow[];
   choreEvents: ChoreEventRow[];
+  prefs: PrefRow[];
+  bills: BillRow[];
+  billShares: BillShareRow[];
+  billPayments: BillPaymentRow[];
+  meals: MealRow[];
+  dutyMarks: DutyMarkRow[];
+  dutyPhotos: DutyPhotoRow[];
 };
 
 type Ctx = {
@@ -91,6 +145,9 @@ type Ctx = {
   data: Data | null | undefined; // null: signed in but no household yet
   books: Books | null;
   reload: () => Promise<void>;
+  /** The last read that failed outright. `data` stays undefined, so without this the splash never
+   *  lifts: a blip on the hotel wifi looked exactly like an app that had hung. */
+  loadError: string | null;
 };
 
 const BooksContext = createContext<Ctx | null>(null);
@@ -100,7 +157,8 @@ async function load(userId: string): Promise<Data | null> {
   if (error) throw error;
   if (!me) return null;
   const h = me.household_id as string;
-  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents] =
+  const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents,
+    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -125,11 +183,20 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('month_close').select('*').eq('household_id', h).order('month'),
       supabase.from('duty').select('*').eq('household_id', h).order('created_at'),
       supabase.from('chore_event').select('*').eq('household_id', h).order('due_on'),
+      supabase.from('bill').select('*').eq('household_id', h).order('occurred_on', { ascending: false }),
+      supabase.from('bill_share').select('*').eq('household_id', h),
+      supabase.from('bill_payment').select('*').eq('household_id', h).order('occurred_at'),
+      // only the last few days: Home reads today, and nobody scrolls back through last month's dinners
+      supabase.from('meal_plan').select('*').eq('household_id', h).gte('date', daysAgo(3)).order('date'),
+      supabase.from('duty_mark').select('*').eq('household_id', h).order('created_at'),
+      supabase.from('duty_photo').select('*').eq('household_id', h).order('created_at'),
+      supabase.from('notification_pref').select('id, member_id, trigger, mode').eq('household_id', h),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
   // are not: a web build that reaches live before the migration does must degrade to "no stock",
-  // "nothing closed" or "no duties", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
+  // "nothing closed", "no duties", "no bills", "no meals", "no photos" or "every notification at
+  // its default", never to the create-a-flat screen (_layout routes `!!session && !data` to welcome).
   for (const r of [household, members, absences, spends, lines, entries, products]) if (r.error) throw r.error;
   return {
     household: household.data,
@@ -147,6 +214,13 @@ async function load(userId: string): Promise<Data | null> {
     closes: closes.data ?? null,
     duties: duties.data ?? [],
     choreEvents: choreEvents.data ?? [],
+    prefs: prefs.data ?? [],
+    bills: bills.data ?? [],
+    billShares: billShares.data ?? [],
+    billPayments: billPayments.data ?? [],
+    meals: meals.data ?? [], // a flat whose DB predates 20261008094500 loses the meals card, nothing else
+    dutyMarks: dutyMarks.data ?? [],
+    dutyPhotos: dutyPhotos.data ?? [],
   };
 }
 
@@ -160,28 +234,58 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const userId = session?.user.id;
+  // Every caller of load() goes through here, so there is one place a failed read can be caught.
+  // The kitty's seven tables are fatal by design — a flat with no members is not a flat — but
+  // "fatal" has to mean a sentence and a button, not a splash screen that never lifts.
   const reload = useCallback(async () => {
-    if (userId) setData(await load(userId));
+    if (!userId) return;
+    try {
+      setData(await load(userId));
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(sayError(e));
+    }
   }, [userId]);
   useEffect(() => {
     if (!userId) return;
     let live = true;
-    load(userId).then((d) => live && setData(d));
+    load(userId).then(
+      (d) => live && (setData(d), setLoadError(null)),
+      (e: unknown) => live && setLoadError(sayError(e)),
+    );
     return () => {
       live = false;
       setData(undefined); // signed out or switched user: forget the old flat
+      setLoadError(null);
     };
   }, [userId]);
 
   // Tabs stay mounted, so useFocusEffect never fires when the flat reopens a backgrounded
   // Home Screen install — that resume is the stale-data case the focus reloads cannot see.
+  // It is also the one moment a lost push subscription can be noticed: iOS drops it with no event
+  // (https://developer.apple.com/forums/thread/728796), so every open re-reads and re-subscribes.
+  // refreshPush never prompts and swallows its own failures, so a broken push_subscription table
+  // degrades notifications and leaves the kitty alone.
+  const householdId = data?.household.id;
+  const memberId = data?.me.id;
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const onShow = () => document.visibilityState === 'visible' && void reload();
+    const onShow = () => {
+      if (document.visibilityState !== 'visible') return;
+      void reload();
+      if (householdId && memberId) void refreshPush(householdId, memberId);
+    };
     document.addEventListener('visibilitychange', onShow);
     return () => document.removeEventListener('visibilitychange', onShow);
-  }, [reload]);
+  }, [reload, householdId, memberId]);
+
+  // And on the first open, which fires no visibilitychange at all.
+  useEffect(() => {
+    if (householdId && memberId) void refreshPush(householdId, memberId);
+  }, [householdId, memberId]);
 
   const books = useMemo<Books | null>(
     () =>
@@ -199,7 +303,9 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     [data],
   );
 
-  return <BooksContext.Provider value={{ session, data, books, reload }}>{children}</BooksContext.Provider>;
+  return (
+    <BooksContext.Provider value={{ session, data, books, reload, loadError }}>{children}</BooksContext.Provider>
+  );
 }
 
 export function useBooks() {

@@ -1,7 +1,8 @@
-// V2 "Card Stack": an onyx canvas, flat colour blocks with 24px corners, monumental Bricolage numerals,
+// V3: a warm near-black canvas (warm ivory in light), soft cards with 24px corners, Bricolage numerals,
 // pill buttons. Brass is the one metallic and appears once per screen. Clay (`negative`) is only for
 // failed saves and reversals. Blocks (stone, brass, sage) keep their fills in both modes and always carry
-// onyx ink. See DESIGN.md for the rules.
+// onyx ink. Every hex here is lifted from docs/design/concept-gen.js, the palette he accepted; every pair
+// in DESIGN.md's table is measured by docs/design/tokens-contrast.js. See DESIGN.md for the rules.
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { createContext, createElement, useContext, useState, type ReactNode } from 'react';
 import {
@@ -27,55 +28,69 @@ import { dayLabel } from '@/lib/util';
 // ---------------------------------------------------------------- tokens
 
 /** Block fills: identical in light and dark, always with onyx ink. */
-const block = { stone: '#E4E0D6', brass: '#C9A45C', sage: '#8FD0A6', onyx: '#121214', onyxMuted: '#2E2C28' };
+const block = { stone: '#E3DCCF', brass: '#C9A45C', sage: '#7FCB9F', onyx: '#1A1714', onyxMuted: '#3A342B' };
 
-const darkV2 = {
-  ground: '#121214',
-  surface: '#1E1E21',
-  raised: '#2A2A2E',
-  line: '#74747B', // interactive borders, 3:1+
-  hair: '#2E2E33', // dividers only
+const darkV3 = {
+  ground: '#15130F',
+  surface: '#221F19',
+  raised: '#2C2821', // one step up: chips, tiles, the nav's resting capsule
+  sunk: '#38332B', // one step above raised: a field inside a raised block, a bar's track
+  line: '#857C6C', // interactive borders, 3:1+ on ground/surface/raised - not on sunk
+  hair: '#302C25', // dividers only
   edge: 'transparent', // block outline (dark uses surface steps, no outline, no shadow)
-  ink: '#EDEAE3',
-  muted: '#A39E94',
+  ink: '#F2EDE3',
+  muted: '#ACA394',
   accent: '#C9A45C', // brass, fill
-  accentText: '#C9A45C', // brass as text/icon
-  onAccent: '#121214',
-  positive: '#8FD0A6',
-  negative: '#F0A08C', // failed saves and reversals only
+  accentText: '#DCBE80', // brass as text/icon: the fill is too dim to read as text on dark
+  onAccent: '#15130F',
+  positive: '#7FCB9F',
+  positiveBg: '#17291E', // fill behind a positive badge; `positive` is the text on it
+  negative: '#F0998A', // failed saves and reversals only
+  negativeBg: '#2F1B16',
+  onNegative: '#15130F', // ink on the destructive pill
   mark: '#C9A45C', // logo
   focus: '#C9A45C',
-  solid: '#EDEAE3', // default pill fill
-  onSolid: '#121214',
-  warnBg: '#2A2619', // warm neutral, e.g. "Off by ₹14"; never clay
-  warnFg: '#E6C890',
-  scrim: 'rgba(8,8,10,0.66)',
+  solid: '#F2EDE3', // default pill fill
+  onSolid: '#15130F',
+  warnBg: '#2D2616', // warm neutral, e.g. the "Off by" bar; never clay
+  warnFg: '#E6C184',
+  navActive: '#302C25', // the floating nav's active capsule
+  navRest: '#1E1B16', // the capsule holding the other destinations
+  scrim: 'rgba(5,4,3,0.64)',
 };
-const lightV2: typeof darkV2 = {
-  ground: '#F7F5F0',
+const lightV3: typeof darkV3 = {
+  ground: '#F6F3EE',
   surface: '#FFFFFF',
-  raised: '#EDE9E0',
-  line: '#8A857B',
-  hair: '#E4E0D6',
-  edge: '#E4E0D6',
-  ink: '#121214',
-  muted: '#5C574E',
-  accent: '#C9A45C', // fill only in light (2.15:1 as text)
+  raised: '#EDE8DF',
+  sunk: '#E3DCCF',
+  line: '#8A8275',
+  hair: '#E4DED2',
+  edge: '#E4DED2',
+  ink: '#1A1714',
+  muted: '#5E574C',
+  accent: '#C9A45C', // fill only in light (2.12:1 as text)
   accentText: '#7A5C22',
-  onAccent: '#121214',
-  positive: '#1F7A4D',
-  negative: '#B3402A',
-  mark: '#121214',
-  focus: '#121214',
-  solid: '#121214',
-  onSolid: '#F7F5F0',
-  warnBg: '#F3EBDD',
+  onAccent: '#1A1714',
+  // The concept's #1F7A4D reads 4.36:1 on `raised` and 3.90:1 on `sunk`. Two steps darker clears AA on
+  // every surface in the palette, so "Get back" green needs no caveat about where it is allowed to sit.
+  positive: '#196740',
+  positiveBg: '#E4F1E8',
+  negative: '#A83421',
+  negativeBg: '#F8E3DE',
+  onNegative: '#F6F3EE', // onyx on clay is 2.70:1, so the destructive pill carries ivory ink in light
+  mark: '#1A1714',
+  focus: '#1A1714',
+  solid: '#1A1714',
+  onSolid: '#F6F3EE',
+  warnBg: '#F6EBD6',
   warnFg: '#6B4E12',
-  scrim: 'rgba(18,18,20,0.55)',
+  navActive: '#FFFFFF',
+  navRest: '#EAE4D9',
+  scrim: 'rgba(26,23,20,0.5)',
 };
 
 // ponytail: the fridge-door names stay as aliases so untouched screens keep compiling; drop them once no screen reads them.
-const withAliases = (t: typeof darkV2) => ({
+const withAliases = (t: typeof darkV3) => ({
   ...t,
   ...block,
   enamel: t.ground,
@@ -89,7 +104,7 @@ const withAliases = (t: typeof darkV2) => ({
   plum: t.accentText,
   onMagnet: t.onAccent,
 });
-export const tokens = { dark: withAliases(darkV2), light: withAliases(lightV2), block };
+export const tokens = { dark: withAliases(darkV3), light: withAliases(lightV3), block };
 export type Palette = typeof tokens.dark;
 export const usePalette = (): Palette => (useColorScheme() === 'light' ? tokens.light : tokens.dark);
 
@@ -110,22 +125,25 @@ export const UI = {
   '500': 'Manrope_500Medium',
   '600': 'Manrope_600SemiBold',
   '700': 'Manrope_700Bold',
+  '800': 'Manrope_800ExtraBold',
 } as const;
 const NUM: TextStyle = { fontVariant: ['lining-nums', 'tabular-nums'] };
 
 /** Text colours inside a block. Stone/brass/sage blocks switch children to onyx ink. */
-type Ink = { ink: string; muted: string };
+type Ink = { ink: string; muted: string; positive: string };
 const InkContext = createContext<Ink | null>(null);
 export function useInk(): Ink {
   const c = usePalette();
-  return useContext(InkContext) ?? { ink: c.ink, muted: c.muted };
+  return useContext(InkContext) ?? { ink: c.ink, muted: c.muted, positive: c.positive };
 }
 
 // ---------------------------------------------------------------- layout
 
-/** The tab bar's own height. `Screen` adds the bottom safe-area inset itself, so a tab screen passes
- *  exactly this as `padBottom` — the bar is absolute, and 56 + inset is its full height. */
-export const TAB_BAR = 56;
+/** What a tab screen must leave clear at the bottom: the floating capsule's 60pt plus the 12pt it
+ *  floats above the safe area (rule 8 — the nav must never cover content). `Screen` adds the bottom
+ *  safe-area inset itself. Kept as TAB_BAR because every tab screen already passes it as `padBottom`;
+ *  the one source of truth is NAV_HEIGHT in src/ui/navbar.tsx, which this must equal. */
+export const TAB_BAR = 72;
 
 export function Screen({
   children,
@@ -154,6 +172,15 @@ export function Screen({
 
 export type BlockTone = 'surface' | 'raised' | 'stone' | 'brass' | 'sage';
 const FILLED: BlockTone[] = ['stone', 'brass', 'sage'];
+/** A filled block keeps one fill in both modes, so the palette's green cannot follow the mode onto it:
+ *  dark `positive` measures 1.41:1 on stone and 1.00:1 on sage. Stone carries the light green (5.04:1);
+ *  brass and sage carry onyx, because no green clears AA on them (2.93:1 and 3.58:1). Every coloured
+ *  value also carries a word, so dropping the colour there costs no meaning. */
+const filledInk = (tone: BlockTone): Ink => ({
+  ink: block.onyx,
+  muted: block.onyxMuted,
+  positive: tone === 'stone' ? lightV3.positive : block.onyx,
+});
 
 /** A flat colour block, 24px corners. With `onPress` it's a doorway (press scale 0.97). */
 export function Block({
@@ -171,7 +198,7 @@ export function Block({
 }) {
   const c = usePalette();
   const filled = FILLED.includes(tone);
-  const ink = filled ? { ink: block.onyx, muted: block.onyxMuted } : { ink: c.ink, muted: c.muted };
+  const ink = filled ? filledInk(tone) : { ink: c.ink, muted: c.muted, positive: c.positive };
   const box = [s.block, { backgroundColor: c[tone], borderColor: filled ? 'transparent' : c.edge }];
   return (
     <InkContext.Provider value={ink}>
@@ -204,7 +231,7 @@ export function Magnet({ color, style }: { color: string; style?: StyleProp<View
 
 export function T({
   children,
-  size = 17,
+  size = 15,
   weight = '500',
   soft,
   color,
@@ -215,7 +242,7 @@ export function T({
 }: {
   children: ReactNode;
   size?: number;
-  weight?: '400' | '500' | '600' | '700';
+  weight?: '400' | '500' | '600' | '700' | '800';
   soft?: boolean;
   color?: string;
   center?: boolean;
@@ -284,7 +311,7 @@ const heroEm = (digits: string) =>
 /** The giant amount: Bricolage 800, small top-aligned ₹ at 0.6x. Shrinks to fit `maxWidth`. */
 export function Hero({
   paise,
-  size = 80,
+  size = 68,
   color,
   maxWidth = 300,
 }: {
@@ -311,15 +338,15 @@ export function Hero({
 }
 
 /** Old name for the home balance; now the V2 hero. */
-export function MagnetNumerals({ paise, size = 80 }: { paise: number; size?: number }) {
+export function MagnetNumerals({ paise, size = 68 }: { paise: number; size?: number }) {
   return <Hero paise={paise} size={size} />;
 }
 
 /** Signed position: positive when the kitty owes the mate, ink when they're due to top up. Never red. */
-export function Position({ paise, size = 17 }: { paise: number; size?: number }) {
-  const c = usePalette();
+export function Position({ paise, size = 15 }: { paise: number; size?: number }) {
+  const ink = useInk();
   return (
-    <T num size={size} color={paise > 0 ? c.positive : undefined}>
+    <T num size={size} color={paise > 0 ? ink.positive : undefined}>
       {formatINR(paise, { sign: true })}
     </T>
   );
@@ -332,7 +359,7 @@ export function Pill({ label, style }: { label: string; style?: StyleProp<ViewSt
   const ink = useInk();
   return (
     <View style={[s.pill, { borderColor: ink.muted }, style]}>
-      <T size={13} weight="600">
+      <T size={12} weight="600">
         {label}
       </T>
     </View>
@@ -355,10 +382,10 @@ export function Chip({ kind, label }: { kind: ChipKind; label?: string }) {
     kind === 'pool'
       ? { backgroundColor: c.raised, borderColor: c.raised }
       : { borderColor: c.line, borderStyle: kind === 'reimbursed' ? 'solid' : 'dashed' };
-  const fg = kind === 'reimbursed' ? c.positive : kind === 'late' ? ink.muted : ink.ink;
+  const fg = kind === 'reimbursed' ? ink.positive : kind === 'late' ? ink.muted : ink.ink;
   return (
     <View style={[s.chipTag, look]}>
-      <T size={12} weight="700" color={fg} style={{ lineHeight: 16 }}>
+      <T size={11.5} weight="700" color={fg} style={{ lineHeight: 15 }}>
         {label ?? CHIP_LABEL[kind]}
       </T>
     </View>
@@ -402,7 +429,7 @@ export function Avatars({ mates }: { mates: { id: string; name: string; done: bo
                   ? { backgroundColor: c.ground, borderColor: c.line }
                   : { borderColor: ink.muted, borderStyle: 'dashed' },
               ]}>
-              <T size={13} weight="700">
+              <T size={12} weight="700">
                 {inits[i]}
               </T>
               <View
@@ -410,7 +437,7 @@ export function Avatars({ mates }: { mates: { id: string; name: string; done: bo
                 {m.done ? <Icon name={CHECK} size={12} color={c.ground} /> : <Ring color={c.muted} />}
               </View>
             </View>
-            <T size={12} soft numberOfLines={1}>
+            <T size={11} soft numberOfLines={1}>
               {m.name}
             </T>
           </View>
@@ -418,11 +445,11 @@ export function Avatars({ mates }: { mates: { id: string; name: string; done: bo
       </View>
       <View style={s.legend} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <Icon name={CHECK} size={14} color={ink.muted} />
-        <T size={13} soft>
+        <T size={12} soft>
           Topped up
         </T>
         <Ring color={ink.muted} style={{ marginLeft: 12 }} />
-        <T size={13} soft>
+        <T size={12} soft>
           Not yet
         </T>
       </View>
@@ -448,7 +475,7 @@ export function Toast({
   const c = usePalette();
   return (
     <View role="status" accessibilityLiveRegion="polite" style={[s.toast, { backgroundColor: c.solid }, style]}>
-      <T size={15} weight="600" color={c.onSolid} style={{ flex: 1 }} numberOfLines={2}>
+      <T size={14} weight="600" color={c.onSolid} style={{ flex: 1 }} numberOfLines={2}>
         {message}
       </T>
       {onUndo && (
@@ -457,7 +484,7 @@ export function Toast({
           accessibilityHint="Adds a reversal entry"
           onPress={onUndo}
           style={({ pressed }) => [s.toastUndo, { borderColor: c.onSolid }, pressed && s.pressed]}>
-          <T size={15} weight="700" color={c.onSolid}>
+          <T size={14} weight="700" color={c.onSolid}>
             {undoLabel}
           </T>
         </Pressable>
@@ -502,7 +529,7 @@ export function MonthCard({
         <Pill label={pill} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: 5 }}>
           {status === 'closed' && <Icon name={{ ios: 'lock', android: 'lock' }} size={14} />}
-          <T size={15} weight="700">
+          <T size={13.5} weight="700">
             {status}
           </T>
         </View>
@@ -528,7 +555,7 @@ function MonthName({ name, size }: { name: string; size: number }) {
 
 // ---------------------------------------------------------------- controls
 
-type IconName = { ios: string; android: string; web?: string };
+export type IconName = { ios: string; android: string; web?: string };
 export function Icon({ name, size = 22, color }: { name: IconName; size?: number; color?: string }) {
   const ink = useInk();
   return (
@@ -562,7 +589,7 @@ export function MagnetButton({
   const c = usePalette();
   const accent = color === 'brass' || color === 'accent';
   let bg = accent ? c.accent : color === 'negative' ? c.negative : c.solid;
-  let fg = accent || color === 'negative' ? c.onAccent : c.onSolid;
+  let fg = color === 'negative' ? c.onNegative : accent ? c.onAccent : c.onSolid;
   let border = bg;
   if (outline) [bg, fg, border] = ['transparent', c.ink, c.line];
   if (disabled) [bg, fg, border] = [c.raised, c.muted, c.raised];
@@ -625,19 +652,22 @@ export function Choice<V extends string>({
 
 export function Field({ label, big, ...props }: TextInputProps & { label: string; big?: boolean }) {
   const c = usePalette();
+  // Follow the block we are in. On a stone block the palette's muted is 2.41:1 against the fill;
+  // the block's own muted is 9.03:1. Outside a filled block the two are the same value.
+  const ink = useInk();
   return (
     <View style={{ gap: 6 }}>
-      <T size={15} weight="600" soft>
+      <T size={13.5} weight="600" soft>
         {label}
       </T>
       <TextInput
-        placeholderTextColor={c.muted}
+        placeholderTextColor={ink.muted}
         selectionColor={c.accent}
         {...props}
         style={[
           s.input,
           { backgroundColor: c.surface, borderColor: c.line, color: c.ink, ...focusRing(c.focus) },
-          big && { fontFamily: DISPLAY, fontSize: 34, height: 72, paddingTop: Platform.OS === 'ios' ? 6 : 0 },
+          big && { fontFamily: DISPLAY, fontSize: 30, height: 66, paddingTop: Platform.OS === 'ios' ? 6 : 0 },
           props.style,
         ]}
       />
@@ -652,7 +682,7 @@ export function DateField({ label, value, onChange }: { label: string; value: st
   const asDate = new Date(value + 'T00:00:00');
   return (
     <View style={[s.dateRow, { backgroundColor: c.surface, borderColor: c.line }]}>
-      <T size={17}>{label}</T>
+      <T size={15.5}>{label}</T>
       {Platform.OS === 'web' ? (
         createElement('input', {
           type: 'date',
@@ -660,7 +690,7 @@ export function DateField({ label, value, onChange }: { label: string; value: st
           'aria-label': label,
           onChange: (e: { target: { value: string } }) => e.target.value && onChange(e.target.value),
           style: {
-            fontSize: 17,
+            fontSize: 15.5,
             fontFamily: UI['600'],
             border: 'none',
             background: 'transparent',
@@ -677,7 +707,7 @@ export function DateField({ label, value, onChange }: { label: string; value: st
             DateTimePickerAndroid.open({ value: asDate, mode: 'date', onChange: (_e, d) => d && onChange(localDate(d)) })
           }
           style={{ minHeight: 48, justifyContent: 'center' }}>
-          <T size={17} weight="600" color={c.accentText}>
+          <T size={15.5} weight="600" color={c.accentText}>
             {dayLabel(value)} {value.slice(0, 4)}
           </T>
         </Pressable>
@@ -715,7 +745,7 @@ export function Row({
       onPress={onPress}
       style={({ pressed }) => [s.row, pressed && onPress && { opacity: 0.6 }]}>
       {icon && <Icon name={icon} size={22} color={muted} />}
-      <T size={17} weight="600" style={{ flex: 1 }}>
+      <T size={15.5} weight="600" style={{ flex: 1 }}>
         {label}
       </T>
       {typeof detail === 'string' ? <T soft>{detail}</T> : detail}
@@ -741,7 +771,7 @@ export function Tile({
   color?: keyof Palette;
 }) {
   const c = usePalette();
-  const ink = on ? { ink: block.onyx, muted: block.onyxMuted } : { ink: c.ink, muted: c.muted };
+  const ink = on ? filledInk('brass') : { ink: c.ink, muted: c.muted, positive: c.positive };
   return (
     <InkContext.Provider value={ink}>
       <Pressable
@@ -751,13 +781,13 @@ export function Tile({
         onPress={onPress}
         style={({ pressed }) => [s.tile, { backgroundColor: on ? c.accent : c.raised }, pressed && s.pressed]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-          <T size={16} weight="700" numberOfLines={2} style={{ flex: 1 }}>
+          <T size={14.5} weight="700" numberOfLines={2} style={{ flex: 1 }}>
             {title}
           </T>
           {on && <Icon name={CHECK} size={18} color={block.onyx} />}
         </View>
         {detail && (
-          <T size={17} num>
+          <T size={15.5} num>
             {detail}
           </T>
         )}
@@ -793,7 +823,7 @@ export function Rule() {
 export function ErrorText({ error }: { error: string | null }) {
   const c = usePalette();
   return error ? (
-    <T size={15} color={c.negative} weight="600">
+    <T size={14} color={c.negative} weight="600">
       {error}
     </T>
   ) : null;
@@ -805,8 +835,8 @@ const s = StyleSheet.create({
   pressed: { transform: [{ scale: 0.97 }] },
   block: { borderRadius: 24, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 16, gap: 12 },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  heading: { fontFamily: UI['700'], fontSize: 22, lineHeight: 28, marginTop: 8 },
-  section: { fontFamily: UI['700'], fontSize: 12, lineHeight: 16, letterSpacing: 1.9, textTransform: 'uppercase' },
+  heading: { fontFamily: UI['800'], fontSize: 20, lineHeight: 26, marginTop: 8, letterSpacing: -0.4 },
+  section: { fontFamily: UI['800'], fontSize: 11.5, lineHeight: 15, letterSpacing: 1.4, textTransform: 'uppercase' },
   heroRow: { flexDirection: 'row', alignItems: 'flex-start' },
   pill: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 5 },
   chipTag: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 9999, paddingHorizontal: 8, paddingVertical: 2 },
@@ -855,7 +885,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  buttonLabel: { fontFamily: UI['700'], fontSize: 17 },
+  buttonLabel: { fontFamily: UI['700'], fontSize: 15.5 },
   // gap 6, not 8: Spending's four period chips measure 374.4pt at gap 8, which is 0.4pt past what a
   // 390pt phone has room for — one hair from wrapping into the ragged two rows this replaced.
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -869,8 +899,8 @@ const s = StyleSheet.create({
     gap: 6,
   },
   chipFill: { flex: 1, paddingHorizontal: 8, justifyContent: 'center' },
-  chipLabel: { fontSize: 16 },
-  input: { minHeight: 56, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 18, fontFamily: UI['500'] },
+  chipLabel: { fontSize: 14.5 },
+  input: { minHeight: 56, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 16.5, fontFamily: UI['500'] },
   dateRow: {
     minHeight: 56,
     borderRadius: 16,

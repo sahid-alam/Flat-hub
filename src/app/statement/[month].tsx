@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { addedLate, istDate, monthBreakdown, presenceWeights, shares } from '@/domain/kitty';
+import { addedLate, istDate, monthBreakdown, presenceWeights, shares, SOURCE_LABEL, type Source } from '@/domain/kitty';
 import { formatINR } from '@/domain/money';
 import { useHousehold } from '@/lib/books';
 import { supabase } from '@/lib/supabase';
@@ -42,11 +42,9 @@ const SHARE_W = 100;
 
 /** All three tiles share one fill: in light, `stone` and `raised` are the same beige, so a fill
  * difference implied an emphasis you couldn't see. The bar below carries it, in both modes. */
-const SOURCE: Record<'zepto' | 'local' | 'other', { label: string; bar: 'accent' | 'line' | 'muted' }> = {
-  zepto: { label: 'Zepto', bar: 'accent' },
-  local: { label: 'Local', bar: 'line' },
-  other: { label: 'Other', bar: 'muted' },
-};
+/** Seven sources, three tokens: the bar cycles them in SOURCES order, the same way SplitBar does
+ *  (src/ui/stats.tsx:108). Only the sources with money in them are drawn. */
+const BARS = ['accent', 'line', 'muted'] as const;
 
 function Detail({ month }: { month: string }) {
   const c = usePalette();
@@ -66,7 +64,7 @@ function Detail({ month }: { month: string }) {
   const days = daysIn(month);
   const closed = (closes ?? []).find((x) => x.month === month);
   const status = statusFor(month, closes ?? []);
-  const split = bySource.map((g) => ({ ...g, ...SOURCE[g.source] }));
+  const split = bySource.map((g, i) => ({ ...g, label: SOURCE_LABEL[g.source as Source], bar: BARS[i % BARS.length] }));
 
   return (
     <Screen>

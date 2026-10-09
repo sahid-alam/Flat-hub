@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exactProduct, normalizeExtraction, normalizeName, matchProduct, type ProductLike } from './extraction.ts';
-import { linesBalance } from './kitty.ts';
+import { exactProduct, flatShare, normalizeExtraction, normalizeName, matchProduct, type ProductLike } from './extraction.ts';
+import { linesBalance, SOURCES } from './kitty.ts';
 
 // What the LLM might hand back for a Zepto order: sloppy kinds/signs, a ₹ string, an empty row.
 const zepto = {
@@ -36,6 +36,37 @@ test('a Zepto order with fees and a coupon normalizes and balances', () => {
   assert.equal(x.lines[2].qty, 1); // qty 0 → 1 (DB requires qty > 0)
   assert.ok(x.lines.every((l) => Number.isInteger(l.line_total_paise)));
   assert.ok(linesBalance(x.total_paise, x.lines)); // the pool must still balance
+});
+
+test('the five apps are read back as themselves, and an unknown app falls to other', () => {
+  for (const source of SOURCES) {
+    assert.equal(normalizeExtraction({ ...zepto, source }).extraction?.source, source, source);
+  }
+  assert.equal(normalizeExtraction({ ...zepto, source: 'dunzo' }).extraction?.source, 'other');
+});
+
+// AUDIT.md M1: Ayan's ₹1,180 Blinkit order is ₹700 of flat groceries and ₹480 of his own chips.
+test("a mate's own lines come off the lines AND the total, and it still balances", () => {
+  const bill = [
+    { name: 'Atta 5kg', line_total_paise: 45_000, kind: 'item' as const },
+    { name: 'Dahi', line_total_paise: 22_000, kind: 'item' as const },
+    { name: 'Chips', line_total_paise: 30_000, kind: 'item' as const, mine: true },
+    { name: 'Coke', line_total_paise: 18_000, kind: 'item' as const, mine: true },
+    { name: 'Delivery fee', line_total_paise: 3_000, kind: 'fee' as const },
+  ];
+  assert.ok(linesBalance(118_000, bill)); // the bill as printed
+
+  const flat = flatShare(118_000, bill);
+  assert.equal(flat.total_paise, 70_000); // 1180 − 480
+  assert.deepEqual(flat.lines.map((l) => l.name), ['Atta 5kg', 'Dahi', 'Delivery fee']);
+  // the one that matters: the same amount left both sides, so invariant 1 holds on what is saved
+  assert.ok(linesBalance(flat.total_paise, flat.lines));
+
+  // nothing marked: the bill is saved whole
+  const unmarked = bill.map((l) => ({ ...l, mine: false }));
+  assert.deepEqual(flatShare(118_000, unmarked), { total_paise: 118_000, lines: unmarked });
+  // all of it marked: nothing is left for the flat, and the card must refuse to save ₹0
+  assert.equal(flatShare(118_000, bill.map((l) => ({ ...l, mine: true }))).total_paise, 0);
 });
 
 test('a mismatched total is reported with both amounts', () => {

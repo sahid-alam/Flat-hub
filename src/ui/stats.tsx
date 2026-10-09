@@ -102,7 +102,7 @@ export function CategoryBars({ rows }: { rows: { label: string; paise: number; p
   );
 }
 
-/** One bar split by share, then the same shares as words. Zepto vs local vs other. */
+/** One bar split by share, then the same shares as words. Which app or shop the money went to. */
 export function SplitBar({ rows }: { rows: { label: string; note?: string; paise: number; pct: number }[] }) {
   const c = usePalette();
   const fills = [c.ink, c.muted, c.line];

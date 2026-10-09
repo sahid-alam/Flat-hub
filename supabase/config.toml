@@ -382,6 +382,13 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+[functions.notify]
+# pg_cron reaches this function through pg_net, which presents the shared secret in
+# x-notify-secret and no JWT at all — so the gateway must not demand one. The function is NOT
+# unauthenticated as a result: it rejects anything without the right NOTIFY_SECRET, which is the
+# only thing stopping someone with the client bundle firing the 08:00 reminder at 03:00.
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

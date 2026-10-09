@@ -20,12 +20,12 @@ Built for our flat first. It may become a product for other flats later, so ever
 - Ledgers are **append-only**: `pool_entry`, `stock_move` and `chore_event`. Mistakes are corrected with a reversing entry, never with an UPDATE or DELETE.
 - Every row gets a client-generated UUID (v7), so retries are idempotent.
 - Every table has `household_id`, and RLS restricts access to members of that household.
-- Each piece of money, rotation or month-close logic gets one runnable test. That test must fail if the pool stops balancing or if a skipped chore earns credit.
-- Don't import the report's pairwise-split machinery (debt simplification, Spliit-style per-expense splits, mate-to-mate UPI). This flat uses a **pooled kitty**; see PLAN.md.
+- Each piece of money, rotation or month-close logic gets one runnable test. That test must fail if the pool stops balancing or if a missed chore earns credit.
+- Don't import the report's pairwise-split machinery (debt simplification, Spliit-style per-expense splits, mate-to-mate UPI) **into the kitty**. The kitty is a **pooled** pot; see PLAN.md. **Bills are the exception**: a bill is one mate paying a vendor and the others owing that mate, so it needs a payer, a share each and a debt until settled. Bills live in their own tables (`bill`, `bill_share`, `bill_payment`) and never touch `pool_entry`, `monthBreakdown` or anyone's kitty position.
 
 ## Domain words
 
 - **Pool / kitty:** shared money that each mate tops up by ₹2,000 every month, paid to the treasurer **Ansh Rastogi**. It is only for groceries and common items; bills are split separately.
 - **Spend:** a purchase for the flat. It is paid either from the pool or from a mate's own pocket. An own-pocket spend is **reimbursed** by Ansh, and the app tracks it until it's paid back.
 - **Lot:** one purchased batch of a product, with its quantity, unit and expiry. Use it FEFO (first-expired, first-out).
-- **Duty:** a recurring chore. A skip is its own outcome and earns no credit; a swap transfers one instance to another mate.
+- **Duty:** a recurring chore. There is no skip. A duty past its due date that nobody has done is **missed** — computed from the schedule, never recorded as an event, and it earns no credit. A **swap** is an offer, not a transfer: the assignee offers the instance, and any other mate claims it. Nobody is ever given a duty without tapping to take it, and an unclaimed offer is missed like any other.
