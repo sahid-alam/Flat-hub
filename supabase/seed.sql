@@ -392,6 +392,31 @@ INSERT INTO public.stock_move (id, household_id, lot_id, delta_qty, reason, memb
 
 -- ---------------------------------------------------------------- § THE DAY IT IS
 --
+-- Areas and "comes with" (20261014175243). The migration backfills areas for flats that exist when
+-- it runs; this flat is inserted after it, directly, so it gets its four here — fixed ids, so tests
+-- and screenshots can name them. Then one real example of each feature:
+--   * every duty gets an area, so the Duties tab groups;
+--   * "Meal planning" is its own duty — 1 point, its own tick, carrying the plans_meals ROLE — and
+--     comes with Dishes. Dishes is a pair, Meal planning is one person, so it goes to the first of
+--     the pair. Dishes gives the role up: the dishes-holder is still the one asked, now through the
+--     link, and gets a separate point for doing it.
+INSERT INTO public.duty_area (id, household_id, name, position, created_at) VALUES
+  ('019a000a-0000-7000-8000-000000000001', '019a0000-0000-7000-8000-00000000000f', 'Kitchen', 0, '2026-09-14 03:30:00+00'),
+  ('019a000a-0000-7000-8000-000000000002', '019a0000-0000-7000-8000-00000000000f', 'Bathroom', 1, '2026-09-14 03:30:00+00'),
+  ('019a000a-0000-7000-8000-000000000003', '019a0000-0000-7000-8000-00000000000f', 'Common areas', 2, '2026-09-14 03:30:00+00'),
+  ('019a000a-0000-7000-8000-000000000004', '019a0000-0000-7000-8000-00000000000f', 'Outside', 3, '2026-09-14 03:30:00+00');
+
+UPDATE public.duty SET area_id = '019a000a-0000-7000-8000-000000000001'
+  WHERE id IN ('019a0006-0000-7000-8000-000000000001', '019a0006-0000-7000-8000-000000000002',
+               '019a0006-0000-7000-8000-000000000005', '019a0006-0000-7000-8000-000000000006');
+UPDATE public.duty SET area_id = '019a000a-0000-7000-8000-000000000002' WHERE id = '019a0006-0000-7000-8000-000000000004';
+UPDATE public.duty SET area_id = '019a000a-0000-7000-8000-000000000004' WHERE id = '019a0006-0000-7000-8000-000000000003';
+UPDATE public.duty SET plans_meals = false WHERE id = '019a0006-0000-7000-8000-000000000001';
+
+INSERT INTO public.duty (id, household_id, name, effort_points, every_days, weekdays, schedule, fixed_member_id, active, created_at, plans_meals, group_size, roster, area_id, follows_id)
+  VALUES ('019a0006-0000-7000-8000-000000000007', '019a0000-0000-7000-8000-00000000000f', 'Meal planning', 1, 1, NULL, 'rolling', NULL, true, '2026-09-14 03:30:00+00', true, 1, NULL,
+          '019a000a-0000-7000-8000-000000000001', '019a0006-0000-7000-8000-000000000001');
+
 -- Every date above was written on 2026-10-09 IST. Left alone they rot: the fridge fills with
 -- things that expired months ago, "expiring soon" empties, and the rota's history stops touching
 -- today. The last seed rotted exactly this way and a later one patched it with a one-off shift.
@@ -416,8 +441,8 @@ begin
   update public.bill_payment set occurred_at = occurred_at + drift;
 
   -- the kitchen
+  -- lot.opened is a boolean, not a timestamp, so it has no date to move.
   update public.lot           set received_at = received_at + drift,
-                                  opened_at   = opened_at   + drift,
                                   expiry_date = expiry_date + drift;
   update public.stock_move    set occurred_at = occurred_at + drift;
   update public.shopping_item set created_at  = created_at  + drift,
