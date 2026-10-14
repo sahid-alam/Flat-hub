@@ -275,7 +275,8 @@ export default function Duties() {
       </View>
     ) : (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <T size={14} weight={yours ? '700' : '500'} soft={!yours} style={{ flex: 1 }}>
+        {/* A floor on the width, so two chips wrap underneath instead of crushing this to a word a line. */}
+        <T size={14} weight={yours ? '700' : '500'} soft={!yours} style={{ flex: 1, minWidth: 160 }}>
           {claimed ? (yours ? 'Your turn now' : `${who.split(' ')[0]}’s turn now`) : yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
           {claimed && ` · ${yours ? 'you' : who.split(' ')[0]} took it from ${owner.split(' ')[0]}`}
           {isOffered && ' · offered, waiting for somebody to take it'}
