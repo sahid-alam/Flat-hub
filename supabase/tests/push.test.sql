@@ -2,7 +2,7 @@
 -- unique key is what makes a retried cron job send once, and only the 8 push triggers may exist.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(21);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -30,38 +30,44 @@ set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","r
 
 select lives_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth, user_agent)
   values ('bbbbbbbb-0000-7000-8000-000000000001', '11111111-0000-7000-8000-000000000001',
-          '22222222-0000-7000-8000-000000000001', 'https://fcm.example/ansh-phone', 'key1', 'auth1', 'Chrome') $$,
+          '22222222-0000-7000-8000-000000000001', 'https://fcm.googleapis.com/fcm/send/ansh-phone', 'key1', 'auth1', 'Chrome') $$,
   'a mate registers their own device');
+
+-- Only a real push service: the notify function POSTs to this from inside Supabase (SSRF).
+select throws_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth)
+  values ('bbbbbbbb-0000-7000-8000-000000000009', '11111111-0000-7000-8000-000000000001',
+          '22222222-0000-7000-8000-000000000001', 'http://169.254.169.254/latest/meta-data', 'k', 'a') $$,
+  '23514', null, 'an endpoint that is not a push service is refused');
 
 -- One row per member per device, and the same endpoint can never be two rows: a browser has one
 -- subscription per service-worker registration.
 select throws_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth)
   values ('bbbbbbbb-0000-7000-8000-000000000002', '11111111-0000-7000-8000-000000000001',
-          '22222222-0000-7000-8000-000000000001', 'https://fcm.example/ansh-phone', 'key2', 'auth2') $$,
+          '22222222-0000-7000-8000-000000000001', 'https://fcm.googleapis.com/fcm/send/ansh-phone', 'key2', 'auth2') $$,
   '23505', null, 'the same endpoint cannot be registered twice');
 
 -- A second device is fine — the table is per member PER DEVICE.
 select lives_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth)
   values ('bbbbbbbb-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000001',
-          '22222222-0000-7000-8000-000000000001', 'https://fcm.example/ansh-laptop', 'key3', 'auth3') $$,
+          '22222222-0000-7000-8000-000000000001', 'https://fcm.googleapis.com/fcm/send/ansh-laptop', 'key3', 'auth3') $$,
   'a mate registers a second device');
 
 select throws_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth)
   values ('bbbbbbbb-0000-7000-8000-000000000004', '11111111-0000-7000-8000-000000000001',
-          '22222222-0000-7000-8000-000000000002', 'https://fcm.example/not-mine', 'k', 'a') $$,
+          '22222222-0000-7000-8000-000000000002', 'https://fcm.googleapis.com/fcm/send/not-mine', 'k', 'a') $$,
   '42501', null, 'a mate cannot register a device for someone else');
 
 select throws_ok($$ insert into public.push_subscription (id, household_id, member_id, endpoint, p256dh, auth)
   values ('bbbbbbbb-0000-7000-8000-000000000005', '11111111-0000-7000-8000-000000000002',
-          '22222222-0000-7000-8000-000000000003', 'https://fcm.example/outsider', 'k', 'a') $$,
+          '22222222-0000-7000-8000-000000000003', 'https://fcm.googleapis.com/fcm/send/outsider', 'k', 'a') $$,
   '42501', null, 'a mate cannot register a device in another household');
 
 -- Not a ledger: the app re-subscribes on every open and upserts, because iOS drops the
 -- subscription silently. An endpoint reissued for the same device must update, not pile up.
-update public.push_subscription set last_seen_at = now(), endpoint = 'https://fcm.example/ansh-phone-2'
+update public.push_subscription set last_seen_at = now(), endpoint = 'https://fcm.googleapis.com/fcm/send/ansh-phone-2'
   where id = 'bbbbbbbb-0000-7000-8000-000000000001';
 select is((select endpoint from public.push_subscription where id = 'bbbbbbbb-0000-7000-8000-000000000001'),
-  'https://fcm.example/ansh-phone-2', 'a re-subscribe updates the endpoint in place');
+  'https://fcm.googleapis.com/fcm/send/ansh-phone-2', 'a re-subscribe updates the endpoint in place');
 
 select lives_ok($$ delete from public.push_subscription where id = 'bbbbbbbb-0000-7000-8000-000000000003' $$,
   'turning notifications off deletes your own row');

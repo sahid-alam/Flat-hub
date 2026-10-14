@@ -4,7 +4,7 @@
 -- older than two months is purged.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(52);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -219,6 +219,19 @@ select throws_ok($$ insert into public.duty_mark (id, household_id, duty_id, due
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-16', '22222222-0000-7000-8000-000000000001',
           'vouch', '22222222-0000-7000-8000-000000000001') $$,
   '23514', null, 'you cannot vouch for yourself');
+-- The actor is the session (20261015090000): Ansh cannot post an offer or a vouch in Rhea's name.
+select throws_ok($$ insert into public.duty_mark (id, household_id, duty_id, due_on, member_id, kind, by_member_id)
+  values ('cccccccc-0000-7000-8000-000000000008', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-16', '22222222-0000-7000-8000-000000000002',
+          'offer', '22222222-0000-7000-8000-000000000002') $$,
+  '42501', null, 'a mate cannot offer another mate''s turn in that mate''s name');
+select throws_ok($$ insert into public.duty_mark (id, household_id, duty_id, due_on, member_id, kind, by_member_id)
+  values ('cccccccc-0000-7000-8000-000000000009', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000001',
+          'vouch', '22222222-0000-7000-8000-000000000002') $$,
+  '42501', null, 'a mate cannot forge somebody else''s vouch');
+-- Rhea vouches for Ansh herself
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
 select lives_ok($$ insert into public.duty_mark (id, household_id, duty_id, due_on, member_id, kind, by_member_id)
   values ('cccccccc-0000-7000-8000-000000000006', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000001',
@@ -229,17 +242,25 @@ select throws_ok($$ insert into public.duty_mark (id, household_id, duty_id, due
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000001',
           'vouch', '22222222-0000-7000-8000-000000000002') $$,
   '23505', null, 'vouching twice is the same vouch, so a retry is idempotent');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
 select throws_ok($$ update public.duty_mark set kind = 'offer' $$, '42501', null, 'duty_mark cannot be updated');
 select throws_ok($$ delete from public.duty_mark $$, '42501', null, 'duty_mark cannot be deleted');
 
 -- ---------------------------------------------------------------- B4: duty_photo
 
+select throws_ok($$ insert into public.duty_photo (id, household_id, duty_id, due_on, member_id, raised_by, path)
+  values ('dddddddd-0000-7000-8000-000000000003', '11111111-0000-7000-8000-000000000001',
+          'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000001',
+          '22222222-0000-7000-8000-000000000002', 'x.jpg') $$,
+  '42501', null, 'a mate cannot add a photo in somebody else''s name');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated"}';
 select lives_ok($$ insert into public.duty_photo (id, household_id, duty_id, due_on, member_id, raised_by, path)
   values ('dddddddd-0000-7000-8000-000000000001', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000001',
           '22222222-0000-7000-8000-000000000002',
           '11111111-0000-7000-8000-000000000001/duty/dddddddd-0000-7000-8000-000000000001.jpg') $$,
   'anyone can attach a photo to a duty instance, including a mate who did not do it');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
 select throws_ok($$ insert into public.duty_photo (id, household_id, duty_id, due_on, member_id, raised_by, path)
   values ('dddddddd-0000-7000-8000-000000000002', '11111111-0000-7000-8000-000000000001',
           'aaaaaaaa-0000-7000-8000-000000000001', '2026-10-01', '22222222-0000-7000-8000-000000000003',

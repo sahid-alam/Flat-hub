@@ -142,7 +142,25 @@ async function dutyDueToday(db: SupabaseClient, today: string): Promise<Recipien
  * sendNotification() goes through node:https, so only generateRequestDetails() is used and the
  * POST is a plain fetch — the part of the library that is awkward in Deno is the part we skip.
  */
+/**
+ * The push services a browser's PushManager actually hands out. Anything else is a stored URL this
+ * function must not POST to from inside Supabase's network (SSRF); the table's CHECK refuses new
+ * ones, this catches any row older than it.
+ */
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /\.push\.apple\.com$/, /^updates\.push\.services\.mozilla\.com$/, /\.notify\.windows\.com$/];
+export const knownPushService = (endpoint: string): boolean => {
+  try {
+    const url = new URL(endpoint);
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    return url.protocol === 'https:' && PUSH_HOSTS.some((h) => h.test(host));
+  } catch {
+    return false;
+  }
+};
+
 async function sendOne(sub: { endpoint: string; p256dh: string; auth: string }, payload: Payload): Promise<number> {
+  // 410 is "gone": the caller reaps the row, which is what an endpoint we will never send to deserves.
+  if (!knownPushService(sub.endpoint)) return 410;
   const details = webpush.generateRequestDetails(
     { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
     JSON.stringify(payload),
@@ -152,6 +170,7 @@ async function sendOne(sub: { endpoint: string; p256dh: string; auth: string }, 
     method: 'POST',
     headers: details.headers as Record<string, string>,
     body: details.body as Uint8Array,
+    redirect: 'manual', // a push service answers; it never redirects, and following one undoes the check above
   });
   return res.status;
 }
