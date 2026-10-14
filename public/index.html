@@ -18,7 +18,12 @@
       html, body { height: 100%; }
       body { overflow: hidden; background: #15130F; }
       @media (prefers-color-scheme: light) { body { background: #F6F3EE; } }
-      #root { display: flex; height: 100%; flex: 1; }
+      /* Pinned to the visible screen. On touch phones the web stack sets `body { height }` from
+         window.innerHeight (react-navigation's mobile-Chrome workaround), and a phone that reports
+         more than it shows made the whole app taller than the screen: the tab bar fell off the
+         bottom and nothing scrolled. Fixed to the viewport, the app's size no longer depends on
+         the body's. */
+      #root { display: flex; position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
     </style>
   </head>
   <body>
