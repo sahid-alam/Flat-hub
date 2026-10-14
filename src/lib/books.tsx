@@ -91,6 +91,8 @@ export type MealRow = {
   written_at: string;
 };
 export type ChoreEventRow = ChoreEvent & { household_id: string; occurred_at: string; created_at: string };
+/** A label for reading (Kitchen, Bathroom); never decides who does what. 20261014175243. */
+export type AreaRow = { id: string; name: string; position: number };
 export type DutyMarkRow = DutyMark & { id: string; household_id: string; created_at: string };
 export type DutyPhotoRow = {
   id: string;
@@ -138,6 +140,7 @@ type Data = {
   meals: MealRow[];
   dutyMarks: DutyMarkRow[];
   dutyPhotos: DutyPhotoRow[];
+  areas: AreaRow[];
 };
 
 type Ctx = {
@@ -158,7 +161,7 @@ async function load(userId: string): Promise<Data | null> {
   if (!me) return null;
   const h = me.household_id as string;
   const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents,
-    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs] =
+    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs, areas] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -191,6 +194,7 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('duty_mark').select('*').eq('household_id', h).order('created_at'),
       supabase.from('duty_photo').select('*').eq('household_id', h).order('created_at'),
       supabase.from('notification_pref').select('id, member_id, trigger, mode').eq('household_id', h),
+      supabase.from('duty_area').select('id, name, position').eq('household_id', h).order('position').order('name'),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
@@ -221,6 +225,7 @@ async function load(userId: string): Promise<Data | null> {
     meals: meals.data ?? [], // a flat whose DB predates 20261008094500 loses the meals card, nothing else
     dutyMarks: dutyMarks.data ?? [],
     dutyPhotos: dutyPhotos.data ?? [],
+    areas: areas.data ?? [],
   };
 }
 

@@ -157,13 +157,9 @@ export default function Home() {
     poolPaise: pool,
     yourDutiesToday: [...new Set(myToday.map((s) => s.duty.name.toLowerCase()))],
     // B4's co-assignment makes this real: the other holders of a duty you are also on today.
-    withYouToday: [
-      ...new Set(
-        slots
-          .filter((s) => s.holderId !== me.id && myToday.some((o) => o.duty.id === s.duty.id && o.date === s.date))
-          .map((s) => first(name(s.holderId))),
-      ),
-    ],
+    withYouToday: slots
+      .filter((s) => s.holderId !== me.id && myToday.some((o) => o.duty.id === s.duty.id && o.date === s.date))
+      .map((s) => ({ duty: s.duty.name.toLowerCase(), who: first(name(s.holderId)) })),
     othersDutiesToday: slots
       .filter((s) => s.holderId !== me.id)
       .map((s) => ({ duty: s.duty.name.toLowerCase(), who: first(name(s.holderId)) })),

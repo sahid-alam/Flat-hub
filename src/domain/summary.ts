@@ -19,9 +19,10 @@ export type SummaryFacts = {
   daysElapsed: number;
   /** What the kitty holds right now. */
   poolPaise: number;
-  /** Duties due today that are yours, and the first names sharing one with you. */
+  /** Duties due today that are yours, and who shares each one with you — per duty, because a
+   *  partner on the dishes is not on the meal planning that comes with it. */
   yourDutiesToday: string[];
-  withYouToday: string[];
+  withYouToday: { duty: string; who: string }[];
   /** Duties due today that are somebody else's: the duty and whose turn it is. */
   othersDutiesToday: { duty: string; who: string }[];
   /** You hold a duty flagged plans_meals today, so you are the one the cook waits on. */
@@ -76,8 +77,17 @@ function dutyLine(f: SummaryFacts): string | null {
   // English; "you are on dishes rota" and "Jatin is on dishes rota" take a bare name and stay
   // English for every one of them, without the template having to guess at an article.
   if (f.yourDutiesToday.length) {
-    const who = f.withYouToday.length ? `You and ${list(f.withYouToday)} are` : 'You are';
-    const what = `${who} on ${list(f.yourDutiesToday)} today`;
+    // Grouped by who you share them with. Pooled, "Dishes with Anant" and "meal planning alone"
+    // read "You and Anant are on dishes and meal planning" — Anant on a duty that is not his.
+    const byPartners = new Map<string, string[]>();
+    for (const duty of f.yourDutiesToday) {
+      const key = list([...new Set(f.withYouToday.filter((w) => w.duty === duty).map((w) => w.who))]);
+      byPartners.set(key, [...(byPartners.get(key) ?? []), duty]);
+    }
+    const clauses = [...byPartners].map(
+      ([who, duties], i) => `${who ? `${i ? 'you' : 'You'} and ${who} are` : `${i ? 'you' : 'You'} are`} on ${list(duties)}`,
+    );
+    const what = `${clauses.join(', and ')} today`;
     return f.youPlanMeals ? `${what}, so you also tell the cook what to make.` : `${what}.`;
   }
   if (f.othersDutiesToday.length === 0) return null;

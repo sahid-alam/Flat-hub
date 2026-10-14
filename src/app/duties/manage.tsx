@@ -11,8 +11,17 @@ import { Block, MagnetButton, Row, Rule, Screen, SectionLabel, T, usePalette } f
 
 export default function ManageDuties() {
   const c = usePalette();
-  const { duties, name } = useHousehold();
+  const { duties, name, areas } = useHousehold();
   const active = duties.filter((d) => d.active);
+  // By area, in the flat's order; anything unlabelled last. An area changes nothing about who does
+  // what, so this is only the order the list reads in.
+  const groups = [...areas.map((a) => ({ id: a.id as string | null, name: a.name })), { id: null, name: 'No area' }]
+    .map((g) => ({
+      ...g,
+      rows: active.filter((d) => (d.area_id ?? null) === g.id || (g.id === null && !areas.some((a) => a.id === d.area_id))),
+    }))
+    .filter((g) => g.rows.length > 0);
+  const lead = (id: string | null | undefined) => duties.find((d) => d.id === id && d.active);
   const retired = duties.filter((d) => !d.active);
 
   return (
@@ -25,24 +34,35 @@ export default function ManageDuties() {
       />
 
       <SectionLabel>{active.length === 1 ? 'The flat runs one' : `The flat runs ${active.length}`}</SectionLabel>
-      <Block style={{ gap: 0, paddingVertical: 4 }}>
-        {active.length === 0 ? (
-          <T soft style={{ paddingVertical: 12 }}>
+      {active.length === 0 && (
+        <Block>
+          <T soft>
             Nothing yet. Add the chores the six of you argue about — one mate at a time, or two together on the same
             day.
           </T>
-        ) : (
-          active.map((d, i) => (
-            <View key={d.id}>
-              {i > 0 && <Rule />}
-              <Row label={d.name} detail={null} onPress={() => router.push(`/duties/edit?id=${d.id}`)} />
-              <T size={13} soft style={{ paddingBottom: 8 }}>
-                {dutyLine(d, name)}
-              </T>
-            </View>
-          ))
-        )}
-      </Block>
+        </Block>
+      )}
+      {groups.map((g) => (
+        <View key={g.id ?? 'none'} style={{ gap: 8 }}>
+          {groups.length > 1 && (
+            <T size={13.5} weight="600" soft>
+              {g.name}
+            </T>
+          )}
+          <Block style={{ gap: 0, paddingVertical: 4 }}>
+            {g.rows.map((d, i) => (
+              <View key={d.id}>
+                {i > 0 && <Rule />}
+                <Row label={d.name} detail={null} onPress={() => router.push(`/duties/edit?id=${d.id}`)} />
+                <T size={13} soft style={{ paddingBottom: 8 }}>
+                  {lead(d.follows_id) ? `Comes with ${lead(d.follows_id)!.name} · ` : ''}
+                  {dutyLine(d, name)}
+                </T>
+              </View>
+            ))}
+          </Block>
+        </View>
+      ))}
       {active.length > 0 && (
         <T size={13} soft>
           Tap one to edit it.

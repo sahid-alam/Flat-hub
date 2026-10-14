@@ -6,6 +6,8 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { createContext, createElement, useContext, useState, type ReactNode } from 'react';
 import {
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -20,7 +22,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatINR } from '@/domain/money';
 import { dayLabel } from '@/lib/util';
@@ -149,24 +151,79 @@ export function Screen({
   children,
   scroll = true,
   padBottom = 0,
+  footer,
 }: {
   children: ReactNode;
   scroll?: boolean;
   /** Extra bottom space, e.g. the floating + Add pill's height plus its margin, so it never covers content. */
   padBottom?: number;
+  /** Pinned under the scroll, above the keyboard: the button that commits the screen never scrolls away. */
+  footer?: ReactNode;
 }) {
   const c = usePalette();
   const body = <View style={[s.screenInner, { paddingBottom: 16 + padBottom }]}>{children}</View>;
   return (
     <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: c.ground }}>
-      {scroll ? (
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          {body}
-        </ScrollView>
-      ) : (
-        body
-      )}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {scroll ? (
+          <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+            {body}
+          </ScrollView>
+        ) : (
+          body
+        )}
+        {footer && (
+          <View style={[s.footer, { borderTopColor: c.hair }]}>
+            <View style={s.footerInner}>{footer}</View>
+          </View>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * A bottom sheet for ONE question: it covers the screen rather than pushing anything on it, so the
+ * rows underneath never move. Tapping the scrim, the back gesture or Done all close it; the answer
+ * is already applied as it is picked, so closing never loses anything. Same build as Put away.
+ */
+export function Sheet({
+  title,
+  onClose,
+  children,
+  footer,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** Replaces the default Done button. */
+  footer?: ReactNode;
+}) {
+  const c = usePalette();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          onPress={onClose}
+          style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }]}
+        />
+        <View role="dialog" accessibilityLabel={title} style={[s.sheet, { backgroundColor: c.ground }]}>
+          <View style={{ alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.line }} />
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
+            <T size={22} weight="700">
+              {title}
+            </T>
+            {children}
+          </ScrollView>
+          <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.hair }}>
+            {footer ?? <MagnetButton label="Done" onPress={onClose} />}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -831,6 +888,17 @@ export function ErrorText({ error }: { error: string | null }) {
 
 const s = StyleSheet.create({
   scroll: { flexGrow: 1 },
+  footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  footerInner: { width: '100%', maxWidth: 528, alignSelf: 'center', gap: 8 },
+  sheet: {
+    maxHeight: '90%',
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 8,
+  },
   screenInner: { flex: 1, padding: 16, gap: 16, width: '100%', maxWidth: 560, alignSelf: 'center' },
   pressed: { transform: [{ scale: 0.97 }] },
   block: { borderRadius: 24, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 16, gap: 12 },

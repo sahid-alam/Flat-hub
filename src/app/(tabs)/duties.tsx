@@ -11,7 +11,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { away, missed, offered, standing, vouchers, type RotaRow, type Slot } from '@/domain/duties';
+import { away, leaderOf, missed, offered, standing, vouchers, type RotaRow, type Slot } from '@/domain/duties';
 import { rota } from '@/domain/duties';
 import { newId } from '@/lib/id';
 import { pickPhoto, upload } from '@/lib/photo';
@@ -31,7 +31,7 @@ const list = (names: string[]) =>
 
 export default function Duties() {
   const c = usePalette();
-  const { duties, members, absences, choreEvents, dutyMarks, dutyPhotos, household, me, name, reload, anchor } =
+  const { duties, members, absences, choreEvents, dutyMarks, dutyPhotos, household, me, name, reload, anchor, areas } =
     useDuties();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +61,26 @@ export default function Duties() {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const open = (r: RotaRow) => r.slots.filter((s) => !s.done);
+  // "Comes with" only binds on a day both are due; on any other day the follower is a duty like any other.
+  const ledBy = (r: RotaRow) => {
+    const lead = leaderOf(r.duty, duties);
+    return lead && days.some((x) => x.duty.id === lead.id && x.date === r.date) ? lead : undefined;
+  };
+  /** What moves with this slot if it changes hands: the followers whose turn is inherited from its holder. */
+  const carried = (r: RotaRow, slot: Slot) =>
+    days
+      .filter((x) => x.date === r.date && ledBy(x)?.id === r.duty.id && x.slots.some((s) => s.ownerId === slot.holderId))
+      .map((x) => x.duty.name);
+  const andCarried = (r: RotaRow, slot: Slot) => {
+    const names = carried(r, slot);
+    return names.length ? ` ${list(names)} ${names.length === 1 ? 'comes' : 'come'} with it.` : '';
+  };
+  // Today, by area, in the flat's own order. A follower sits in its leader's group, right under it —
+  // rota() already places it there — so "Dishes, then Meal planning" never splits across two headings.
+  const areaKey = (r: RotaRow) => (ledBy(r) ?? r.duty).area_id ?? null;
+  const groups = [...areas.map((a) => ({ id: a.id as string | null, name: a.name })), { id: null, name: 'Other' }]
+    .map((g) => ({ ...g, rows: todays.filter((r) => areaKey(r) === g.id || (g.id === null && !areas.some((a) => a.id === areaKey(r)))) }))
+    .filter((g) => g.rows.length > 0);
   const openToday = todays.flatMap(open);
   // Collapse the names: one mate's name once, not once per duty, and never your own name back at you.
   const first = (id: string) => (id === me.id ? 'you' : name(id).split(' ')[0]);
@@ -224,6 +244,7 @@ export default function Duties() {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <T size={14} soft style={{ flex: 1 }}>
           {`${owner.split(' ')[0]} offered it · due ${dayLabel(r.date)}`}
+          {andCarried(r, slot) && ` ·${andCarried(r, slot).replace(/\.$/, '')}`}
           {onThisAlready && ' · you are on this one too'}
         </T>
         {/* Not for a mate already holding the other half: there is no turn to hand over, and
@@ -235,7 +256,9 @@ export default function Duties() {
             strong
             busy={busy === `${card}:swapped`}
             accessibilityLabel={`Take ${r.duty.name} from ${owner.split(' ')[0]}, due ${dayLabel(r.date)}`}
-            onPress={() => event(r, slot, 'swapped', me.id, `${r.duty.name} is yours — due ${dayLabel(r.date)}.`)}
+            onPress={() =>
+              event(r, slot, 'swapped', me.id, `${r.duty.name} is yours — due ${dayLabel(r.date)}.${andCarried(r, slot)}`)
+            }
           />
         )}
       </View>
@@ -261,7 +284,7 @@ export default function Duties() {
             label="Offer"
             busy={busy === `${card}:offer`}
             accessibilityLabel={`Offer ${r.duty.name}, due ${dayLabel(r.date)}, to anyone who will take it`}
-            onPress={() => mark(r, slot, 'offer', `Offered — it is open until somebody takes it.`)}
+            onPress={() => mark(r, slot, 'offer', `Offered — it is open until somebody takes it.${andCarried(r, slot)}`)}
           />
         )}
       </View>
@@ -290,7 +313,7 @@ export default function Duties() {
           <SwipeRow
             label="Offer"
             icon={OFFER_ICON}
-            onAction={() => mark(r, slot, 'offer', 'Offered — it is open until somebody takes it.')}>
+            onAction={() => mark(r, slot, 'offer', `Offered — it is open until somebody takes it.${andCarried(r, slot)}`)}>
             {body}
           </SwipeRow>
         ) : (
@@ -355,7 +378,7 @@ export default function Duties() {
   };
 
   const dutyBlock = (r: RotaRow, when: 'past' | 'today' | 'future') => (
-    <Block key={`${r.duty.id}:${r.date}`}>
+    <Block key={`${r.duty.id}:${r.date}`} style={ledBy(r) && { marginLeft: 20 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
         <T size={17} weight="700" style={{ flex: 1 }}>
           {r.duty.name}
@@ -365,9 +388,11 @@ export default function Duties() {
         />
       </View>
       <T size={13} soft>
-        {r.duty.group_size > 1
-          ? `${r.duty.group_size} together, the same day · ${cadenceLabel(r.duty)}`
-          : cadenceLabel(r.duty)}
+        {ledBy(r)
+          ? `Comes with ${ledBy(r)!.name} — whoever does it does this too`
+          : r.duty.group_size > 1
+            ? `${r.duty.group_size} together, the same day · ${cadenceLabel(r.duty)}`
+            : cadenceLabel(r.duty)}
       </T>
       {r.duty.plans_meals && r.slots.some((s) => s.holderId === me.id) && when === 'today' && (
         <T size={13} weight="600" soft>
@@ -440,7 +465,13 @@ export default function Duties() {
           </Block>
         )}
 
-        {todays.map((r) => dutyBlock(r, 'today'))}
+        {groups.map((g) => (
+          <View key={g.id ?? 'other'} style={{ gap: 16 }}>
+            {/* One heading is no grouping at all: a flat that never uses areas sees no heading. */}
+            {groups.length > 1 && <SectionLabel>{g.name}</SectionLabel>}
+            {g.rows.map((r) => dutyBlock(r, 'today'))}
+          </View>
+        ))}
 
         {[...new Set(later.map((r) => r.date))].map((date) => (
           <View key={date} style={{ gap: 16 }}>

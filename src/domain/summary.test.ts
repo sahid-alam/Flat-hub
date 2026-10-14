@@ -75,7 +75,7 @@ test('rule 2: no ranking words anywhere', () => {
   const lines = morningSummary(
     facts({
       yourDutiesToday: ['the dishes'],
-      withYouToday: ['Adnan'],
+      withYouToday: [{ duty: 'the dishes', who: 'Adnan' }],
       youPlanMeals: true,
       expiring: [{ name: 'Milk', daysLeft: 0 }],
       spentThisMonthPaise: 235_000,
@@ -107,12 +107,25 @@ test('at most three lines, however much is true', () => {
 
 test("your duty today, with whoever shares it, and the cook when it's the meal duty", () => {
   assert.equal(
-    morningSummary(facts({ yourDutiesToday: ['the dishes'], withYouToday: ['Adnan'], youPlanMeals: true }))[0],
+    morningSummary(facts({ yourDutiesToday: ['the dishes'], withYouToday: [{ duty: 'the dishes', who: 'Adnan' }], youPlanMeals: true }))[0],
     'You and Adnan are on the dishes today, so you also tell the cook what to make.',
   );
   assert.equal(
     morningSummary(facts({ yourDutiesToday: ['the dishes', 'the bins'] }))[0],
     'You are on the dishes and the bins today.',
+  );
+});
+
+test('a partner on one duty is not put on the duty that comes with it', () => {
+  assert.equal(
+    morningSummary(
+      facts({
+        yourDutiesToday: ['dishes rota', 'meal planning'],
+        withYouToday: [{ duty: 'dishes rota', who: 'Anant' }],
+        youPlanMeals: true,
+      }),
+    )[0],
+    'You and Anant are on dishes rota, and you are on meal planning today, so you also tell the cook what to make.',
   );
 });
 
