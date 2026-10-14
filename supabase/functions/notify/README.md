@@ -173,6 +173,9 @@ curl -X POST http://127.0.0.1:54321/functions/v1/notify \
 ```
 
 With no `push_subscription` rows it answers `recipients: N, sent: 0` — which still proves the rota
-ran. To prove the encryption too, point a subscription's `endpoint` at a local server and decrypt
-what arrives: the body is `aes128gcm`, the `Authorization` header is `vapid t=<JWT>, k=<key>`, and
-the plaintext is the JSON `sw.js` reads.
+ran. To prove the encryption too, subscribe a real browser (Chrome gives an `fcm.googleapis.com`
+endpoint) and check the notification arrives. A local server no longer works as the endpoint:
+`push_subscription_endpoint_known` and the function's `knownPushService()` admit only the real push
+services, because the function POSTs from inside Supabase's network (an SSRF otherwise). The body
+is `aes128gcm`, the `Authorization` header is `vapid t=<JWT>, k=<key>`, and the plaintext is the
+JSON `sw.js` reads.
