@@ -93,7 +93,11 @@ export default function EditDuty() {
   const [roster, setRoster] = useState<string[]>(duty?.roster ?? mates.map((m) => m.id));
   const [meals, setMeals] = useState(duty?.plans_meals ?? false);
   const [areaId, setAreaId] = useState<string | null>(duty?.area_id ?? null);
-  const [follows, setFollows] = useState<string | null>(duty?.follows_id ?? null);
+  // A link to a retired leader already binds nothing (leaderOf), so the form opens without it and
+  // saving clears it — otherwise it would keep forcing roster to null behind a "Who's in" that shows one.
+  const [follows, setFollows] = useState<string | null>(
+    duty?.follows_id && duties.some((d) => d.id === duty.follows_id && d.active) ? duty.follows_id : null,
+  );
   const [followers, setFollowers] = useState<string[]>(linkedBefore);
   const [open, setOpen] = useState<Question | null>(null);
   const [reorder, setReorder] = useState(false);
@@ -108,13 +112,17 @@ export default function EditDuty() {
   const inRoster = roster.filter((rid) => mates.some((m) => m.id === rid));
   const cadenceOk = cadence === 'wd' ? weekdays.length > 0 : cadence === 'dn' ? nOk : true;
   const fixed = duty?.schedule === 'fixed';
-  const leader = follows ? duties.find((d) => d.id === follows) : undefined;
+  // Active only, as leaderOf() resolves it: a retired leader binds nothing, so the screen must not say it does.
+  const leader = follows ? duties.find((d) => d.id === follows && d.active) : undefined;
   const others = duties.filter((d) => d.active && d.id !== selfId);
   // One level deep, the same two rules the trigger holds (20261014175243). A duty that brings others
   // along cannot itself come with one, and a fixed duty ("always Ansh") cannot come with anything.
   const leaders = others.filter((d) => !d.follows_id);
   const hasLeaderOf = (d: DutyRow) => duties.some((x) => x.follows_id === d.id);
-  const canFollow = !fixed && followers.length === 0;
+  // Retired followers stay linked but never show, so they must not block anything either; saving
+  // with "Comes with" set unlinks them first (setLinks([]) below).
+  const shownFollowers = followers.filter((f) => others.some((d) => d.id === f));
+  const canFollow = !fixed && shownFollowers.length === 0;
   const canBring = follows === null;
   const bringable = others.filter((d) => d.schedule === 'rolling' && !hasLeaderOf(d));
   const unbringable = others.filter((d) => d.schedule !== 'rolling' || hasLeaderOf(d));
@@ -245,7 +253,6 @@ export default function EditDuty() {
 
   const first = (rid: string) => nameOf(rid).split(' ')[0];
   const dutyName = (did: string) => duties.find((d) => d.id === did)?.name ?? 'a duty';
-  const shownFollowers = followers.filter((f) => others.some((d) => d.id === f));
   const often = cadenceLabel({
     weekdays: cadence === 'wd' ? weekdays : null,
     every_days: cadence === 'dn' ? (nOk ? n : 0) : cadence === 'wd' ? null : Number(cadence.slice(1)),
@@ -336,7 +343,7 @@ export default function EditDuty() {
           />
         </View>
       </Block>
-      {fixed && followers.length === 0 && (
+      {fixed && shownFollowers.length === 0 && (
         <T size={13} soft>
           A duty that is always {duty?.fixed_member_id ? first(duty.fixed_member_id) : 'one mate'} can bring others along,
           but cannot come with another.
