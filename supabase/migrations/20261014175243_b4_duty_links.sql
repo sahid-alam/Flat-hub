@@ -164,12 +164,29 @@ revoke all on function private.seed_duty_areas(uuid), private.check_duty_follows
 -- every flat that already exists
 select private.seed_duty_areas(id) from public.household;
 
--- and every flat made from now on. Same body as 20261002122729, plus the one seeding line.
+-- and every flat made from now on. Same body as 20261002122729, plus the seeding line — and a fix.
+--
+-- SECURITY: the original body let anyone join any flat whose id they knew. `on conflict do nothing`
+-- was there so a RETRY of your own creation (a lost response, a double tap) stays harmless — but it
+-- never checked the existing flat was yours. Passing another flat's id skipped the household insert
+-- and still ran the member insert, making the caller a member of that flat: every ledger readable
+-- and writable through RLS. Measured locally: an outsider went from 0 of Flat 4B's members visible
+-- to all 7 and its 17 kitty entries. The only intended way into an existing flat is join_household
+-- with its invite code. So when the flat already exists, this is a retry only if the caller already
+-- belongs to it; anything else is refused.
 create or replace function public.create_household(p_household_id uuid, p_member_id uuid, p_name text, p_display_name text)
 returns uuid language plpgsql security definer set search_path = '' as $$
 begin
   if (select auth.uid()) is null then raise exception 'not signed in' using errcode = '42501'; end if;
   insert into public.household (id, name) values (p_household_id, p_name) on conflict (id) do nothing;
+  if not found and not exists (
+    select 1 from public.member where household_id = p_household_id and user_id = (select auth.uid())
+  ) then
+    -- An unused id simply creates a new flat, so this error does reveal that an id is taken. That
+    -- leaks nothing usable: a flat's id is a UUID with 74 random bits, not something to guess, and
+    -- knowing one now gets you nothing — which is the actual fix.
+    raise exception 'could not create that flat' using errcode = '42501';
+  end if;
   insert into public.member (id, household_id, user_id, display_name)
     values (p_member_id, p_household_id, (select auth.uid()), p_display_name)
     on conflict (id) do nothing;

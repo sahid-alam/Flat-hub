@@ -2,7 +2,7 @@
 -- Every structural rule the domain relies on is held here, so no client bug can store a bad link.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(29);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'ansh@test'),
@@ -137,6 +137,20 @@ select throws_ok($$ select public.set_duty_followers('aaaaaaaa-0000-7000-8000-00
   'P0002', null, 'a non-member cannot change another flat''s links: the duty is invisible to them');
 select is((select count(*)::int from public.duty_area where household_id = '11111111-0000-7000-8000-000000000001'), 0,
   'a non-member cannot read another flat''s areas');
+
+-- ---------------------------------------------------------------- create_household cannot join a flat
+-- The original create_household skipped the household insert on a known id and still added the
+-- caller as a member. Knowing a flat's id must get you nothing; only an invite code gets you in.
+select throws_ok($$ select public.create_household('11111111-0000-7000-8000-000000000001',
+  '22222222-0000-7000-8000-0000000000ff', 'Hijack', 'Intruder') $$,
+  '42501', null, 'create_household cannot be used to join a flat whose id you know');
+select is((select count(*)::int from public.member where household_id = '11111111-0000-7000-8000-000000000001'), 0,
+  'the outsider is still not a member of Flat 4B');
+-- and a genuine retry by the flat's own creator is still harmless
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
+select lives_ok($$ select public.create_household('11111111-0000-7000-8000-000000000001',
+  '22222222-0000-7000-8000-000000000001', 'Flat 4B', 'Ansh') $$,
+  'the creator retrying their own create_household still succeeds');
 
 select * from finish();
 rollback;
