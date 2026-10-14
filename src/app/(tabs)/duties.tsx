@@ -15,7 +15,7 @@ import { away, leaderOf, missed, offered, standing, vouchers, type RotaRow, type
 import { rota } from '@/domain/duties';
 import { newId } from '@/lib/id';
 import { pickPhoto, upload } from '@/lib/photo';
-import { insertOnce } from '@/lib/supabase';
+import { insertOnce, supabase } from '@/lib/supabase';
 import { dayLabel, sayError, today } from '@/lib/util';
 import { SwipeRow, cadenceLabel, useDuties } from '@/ui/duties';
 import { Block, ErrorText, Icon, Pill, Rule, Screen, SectionLabel, T, TAB_BAR, Toast, usePalette } from '@/ui/kit';
@@ -173,7 +173,18 @@ export default function Duties() {
         kind,
         by_member_id: me.id,
       });
-      setToast({ card, message });
+      // An offer can be taken back while nobody has taken it, so its toast offers the same Undo.
+      setToast({ card, message, undo: kind === 'offer' ? () => withdraw(r, slot) : undefined });
+    });
+  }
+
+  /** Take your own offer back. Refused once somebody has taken it (20261015120000_withdraw_offer). */
+  async function withdraw(r: RotaRow, slot: Slot) {
+    const card = `${r.duty.id}:${r.date}:${slot.ownerId}`;
+    await run(`${card}:withdraw`, async () => {
+      const { error: e } = await supabase.rpc('withdraw_offer', { p_duty: r.duty.id, p_due: r.date });
+      if (e) throw e;
+      setToast({ card, message: 'Taken back — it is your turn again.' });
     });
   }
 
@@ -277,6 +288,15 @@ export default function Duties() {
             busy={busy === `${card}:done`}
             accessibilityLabel={`${r.duty.name} · mark done`}
             onPress={() => event(r, slot, 'done', null, `${r.duty.name} done`)}
+          />
+        )}
+        {/* Yours, offered, and nobody has taken it yet (a taken slot is no longer the owner's to hold). */}
+        {yours && isOffered && (
+          <Chip
+            label="Take back"
+            busy={busy === `${card}:withdraw`}
+            accessibilityLabel={`Take back your offer of ${r.duty.name}, due ${dayLabel(r.date)}`}
+            onPress={() => withdraw(r, slot)}
           />
         )}
         {yours && !isOffered && (
