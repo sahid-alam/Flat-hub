@@ -13,6 +13,7 @@ import {
   rota,
   standing,
   dueToday,
+  leaderOf,
   type Duty,
   type DatedDuty,
   type ChoreEvent,
@@ -554,4 +555,133 @@ test('dueToday nudges every holder of a pair duty', () => {
   const six6 = ['a', 'b', 'c', 'd'].map(mate);
   const outside = [ev({ duty_id: 'd1', member_id: 'b', outcome: 'swapped', to_member_id: 'c', due_on: '2026-10-01' })];
   assert.deepEqual(dueToday([pair], six6, [], outside, '2026-10-01').map((r) => r.memberId), ['a', 'c']);
+});
+
+// ---------------------------------------------------------------- comes with (follows_id)
+// "Meal planning comes with Dishes". A link binds WHO, never WHETHER: the follower takes whoever
+// holds the leader that day, and stays a separate duty with its own tick and its own points.
+
+const dishes = (over: Partial<Duty> = {}): Duty => ({ ...daily('dishes', 2), ...over });
+const meals = (over: Partial<Duty> = {}): Duty => ({ ...daily('meals', 1), follows_id: 'dishes', ...over });
+/** Who holds each slot of `id` on `date`, out of a rota row. */
+const held = (rows: ReturnType<typeof rota>, id: string, date = ANCHOR) =>
+  rows.find((r) => r.duty.id === id && r.date === date)?.slots.map((s) => s.holderId) ?? null;
+
+test('a follower lands on whoever holds its leader, every day both are due', () => {
+  const rows = rota([dishes(), meals()], abc, [], [], ANCHOR, 6, ANCHOR);
+  for (let i = 0; i < 6; i++) {
+    const date = new Date(Date.parse(ANCHOR) + i * 86_400_000).toISOString().slice(0, 10);
+    assert.deepEqual(held(rows, 'meals', date), held(rows, 'dishes', date), `day ${i + 1}`);
+  }
+  // and the leader still rotates: three mates, three different dishes-holders over three days
+  assert.deepEqual(new Set([0, 1, 2].map((i) => held(rows, 'dishes', new Date(Date.parse(ANCHOR) + i * 86_400_000).toISOString().slice(0, 10))![0])).size, 3);
+});
+
+test('on a day its leader is not due, a follower takes its own turn — it never vanishes', () => {
+  // Dishes every 2 days, meal planning daily: linked on the 1st, 3rd, 5th; on its own in between.
+  const lead = dishes({ every_days: 2 });
+  const rows = rota([lead, meals()], abc, [], [], ANCHOR, 4, ANCHOR);
+  assert.equal(rows.filter((r) => r.duty.id === 'meals').length, 4, 'meal planning is placed every day');
+  assert.deepEqual(held(rows, 'meals', '2026-10-01'), held(rows, 'dishes', '2026-10-01'));
+  assert.deepEqual(held(rows, 'meals', '2026-10-03'), held(rows, 'dishes', '2026-10-03'));
+  assert.equal(held(rows, 'dishes', '2026-10-02'), null, 'dishes is not due on the 2nd');
+  assert.equal(held(rows, 'meals', '2026-10-02')!.length, 1, 'meal planning still has someone on the 2nd');
+});
+
+test('a retired leader frees its follower to take its own turns', () => {
+  const rows = rota([dishes({ active: false }), meals()], abc, [], [], ANCHOR, 3, ANCHOR);
+  assert.equal(rows.filter((r) => r.duty.id === 'meals').length, 3);
+  assert.equal(rows.some((r) => r.duty.id === 'dishes'), false);
+  assert.equal(leaderOf(meals(), [dishes({ active: false }), meals()]), undefined);
+});
+
+test('the follower moves with its leader when the leader’s pick is away', () => {
+  const day1 = rota([dishes(), meals()], abc, [], [], ANCHOR, 1, ANCHOR);
+  const usual = held(day1, 'dishes')![0];
+  const away: Absence[] = [{ member_id: usual, from_date: ANCHOR, to_date: ANCHOR }];
+  const rows = rota([dishes(), meals()], abc, away, [], ANCHOR, 1, ANCHOR);
+  assert.notEqual(held(rows, 'dishes')![0], usual);
+  assert.deepEqual(held(rows, 'meals'), held(rows, 'dishes'), 'meal planning follows the stand-in, not the away mate');
+});
+
+test('a claim on the leader carries the follower with it', () => {
+  // a offered dishes and b took it: b is doing dishes, so b is the one who tells the cook
+  const claim = [ev({ duty_id: 'dishes', member_id: 'a', outcome: 'swapped', to_member_id: 'b', due_on: ANCHOR })];
+  assert.deepEqual(who(dishes(), ANCHOR, abc, [], claim, ANCHOR, [dishes(), meals()]), ['b']);
+  assert.deepEqual(who(meals(), ANCHOR, abc, [], claim, ANCHOR, [dishes(), meals()]), ['b']);
+  const rows = rota([dishes(), meals()], abc, [], claim, ANCHOR, 1, ANCHOR);
+  assert.deepEqual(held(rows, 'meals'), ['b']);
+});
+
+test('the follower’s own instance wins: meal planning can be offered on its own', () => {
+  // a holds dishes, so a also holds meal planning — then a offers ONLY the meal planning, and c takes it
+  const own = [ev({ duty_id: 'meals', member_id: 'a', outcome: 'swapped', to_member_id: 'c', due_on: ANCHOR })];
+  const all = [dishes(), meals()];
+  assert.deepEqual(who(dishes(), ANCHOR, abc, [], own, ANCHOR, all), ['a'], 'a still does the dishes');
+  assert.deepEqual(who(meals(), ANCHOR, abc, [], own, ANCHOR, all), ['c'], 'c tells the cook');
+});
+
+test('a link binds who, never whether: ticking the leader does not tick the follower', () => {
+  const done = [ev({ duty_id: 'dishes', member_id: 'a', outcome: 'done', due_on: ANCHOR, points: 2 })];
+  const all = [dishes(), meals()];
+  const mealSlot = assignees(meals(), ANCHOR, abc, [], done, ANCHOR, all)[0];
+  assert.equal(mealSlot.holderId, 'a');
+  assert.equal(mealSlot.done, false, 'doing the dishes is not telling the cook');
+  assert.equal(donePoints(done, 'a'), 2, 'a has earned the dishes points and nothing for meal planning');
+  assert.equal(missed(mealSlot, ANCHOR, '2026-10-02'), true, 'an untold cook is a missed duty like any other');
+});
+
+test('the follower’s points count against its holder before the next duty is picked', () => {
+  // ids sort bins < dishes < meals. Day 1: bins → a; dishes → b; meal planning → b, so b carries
+  // 2 + 1 = 3. If the follower's point were NOT credited, b would look like 2 and be picked for
+  // dishes again on day 2 — the mate who did the most getting the next turn too.
+  const bins = { ...daily('bins', 3) };
+  const rows = rota([bins, dishes(), meals()], abc, [], [], ANCHOR, 2, ANCHOR);
+  assert.deepEqual(held(rows, 'dishes', '2026-10-01'), ['b']);
+  assert.deepEqual(held(rows, 'meals', '2026-10-01'), ['b']);
+  assert.notDeepEqual(held(rows, 'dishes', '2026-10-02'), ['b'], 'b does not get dishes two days running');
+});
+
+test('a pair leader and a single follower: the follower takes the first of the pair', () => {
+  const pair = dishes({ group_size: 2 });
+  const rows = rota([pair, meals()], abc, [], [], ANCHOR, 1, ANCHOR);
+  assert.equal(held(rows, 'dishes')!.length, 2);
+  assert.deepEqual(held(rows, 'meals'), [held(rows, 'dishes')![0]], 'one person tells the cook, not two');
+  // a pair follower of a pair leader takes both, in the same order
+  const both = rota([pair, meals({ group_size: 2 })], abc, [], [], ANCHOR, 1, ANCHOR);
+  assert.deepEqual(held(both, 'meals'), held(both, 'dishes'));
+});
+
+test('a leader with nobody available leaves the follower to take its own turn', () => {
+  // dishes is only a's, and a is away: dishes has nobody, so meal planning falls back to its own pick
+  const onlyA = dishes({ roster: ['a'] });
+  const away: Absence[] = [{ member_id: 'a', from_date: ANCHOR, to_date: ANCHOR }];
+  const rows = rota([onlyA, meals()], abc, away, [], ANCHOR, 1, ANCHOR);
+  assert.deepEqual(held(rows, 'dishes'), []);
+  assert.equal(held(rows, 'meals')!.length, 1);
+  assert.notEqual(held(rows, 'meals')![0], 'a');
+});
+
+test('a chain in bad data degrades to "stands alone" instead of a duty that is never placed', () => {
+  // the database keeps links one level deep; if a chain ever got in, x must still be placed
+  const x = { ...daily('x', 1), follows_id: 'meals' };
+  const rows = rota([dishes(), meals(), x], abc, [], [], ANCHOR, 3, ANCHOR);
+  assert.equal(rows.filter((r) => r.duty.id === 'x').length, 3, 'x is placed every day');
+  assert.equal(leaderOf(x, [dishes(), meals(), x]), undefined, 'x follows a follower, so the link is not live');
+});
+
+test('a linked follower’s expected points are billed to its leader’s crew, not the whole flat', () => {
+  // dishes is a and b's only; meal planning comes with it, so c can never be given meal planning
+  // and must not be counted as behind on it — or the rota would load c up elsewhere to "catch up".
+  const ab = dishes({ roster: ['a', 'b'] });
+  const fair = fairSharePoints([ab, meals()], abc, [], ANCHOR, ANCHOR, ANCHOR);
+  assert.equal(fair.c, 0);
+  assert.equal(fair.a, (2 + 1) / 2);
+  assert.equal(fair.b, (2 + 1) / 2);
+});
+
+test('the morning push names the follower for whoever holds the leader', () => {
+  const rows = dueToday([{ ...dishes(), created_at: '2026-10-01T00:00:00Z' }, { ...meals(), created_at: '2026-10-01T00:00:00Z' }], abc, [], [], ANCHOR);
+  assert.equal(rows.length, 1, 'one mate, one push');
+  assert.deepEqual(rows[0].dutyNames.sort(), ['dishes', 'meals']);
 });

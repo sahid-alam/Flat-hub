@@ -29,6 +29,13 @@ export type Duty = {
   group_size: number; // how many mates do it TOGETHER on the day. Not alternating owners.
   plans_meals: boolean; // whoever holds it also tells the cook what to make
   roster: string[] | null; // who's in, in rota order; null = every mate
+  /** A label for reading (Kitchen, Bathroom). Never affects who does what. */
+  area_id?: string | null;
+  /**
+   * "Comes with": on a day both are due, this duty goes to whoever holds `follows_id` that day.
+   * Binds WHO, never WHETHER — the two stay separate duties with their own ticks and points.
+   */
+  follows_id?: string | null;
 };
 
 export type ChoreEvent = {
@@ -76,6 +83,18 @@ export const away = (absences: Absence[], memberId: string, date: string): boole
   absences.some((a) => a.member_id === memberId && a.from_date <= date && date <= a.to_date);
 /** In this duty's roster. A null roster means the whole flat; a stale id simply never matches a member. */
 const inRoster = (duty: Duty, memberId: string): boolean => !duty.roster || duty.roster.includes(memberId);
+
+/**
+ * The duty this one comes with, if that link is live: the leader exists in `duties`, is active, and
+ * is a ROOT (follows nothing itself). The database keeps links one level deep, but this checks
+ * anyway — a chain in bad data then degrades to "this one stands alone" instead of a follower that
+ * is never placed. A retired leader frees its followers to take their own turns.
+ */
+export function leaderOf(duty: Duty, duties: Duty[]): Duty | undefined {
+  if (!duty.follows_id) return undefined;
+  const lead = duties.find((d) => d.id === duty.follows_id);
+  return lead && lead.active && !lead.follows_id ? lead : undefined;
+}
 
 /** `anchor` is the duty's created date: a duty is never due before it existed. */
 export function isDueOn(duty: Duty, date: string, anchor: string): boolean {
@@ -145,11 +164,18 @@ export function fairSharePoints(
   const priced = new Map<string, number>();
   for (const e of live(events)) priced.set(`${e.duty_id}|${e.due_on}`, e.points);
   for (const d of duties.filter((d) => d.active)) {
+    const lead = leaderOf(d, duties);
     for (const date of dueDates(d, from, to, anchor)) {
-      const here = present.filter((m) => onRoll(m, date) && !away(absences, m.id, date) && inRoster(d, m.id));
+      // A follower linked today is done by its leader's crew, so that crew carries its expected
+      // points: the leader's roster, and no more heads than the leader puts on the day. Billing it
+      // to the whole flat instead would leave every mate outside that roster looking behind on a
+      // duty that can never reach them — and the rota would then load them up elsewhere to catch up.
+      const linked = lead && isDueOn(lead, date, anchor) ? lead : undefined;
+      const crew = linked ?? d;
+      const here = present.filter((m) => onRoll(m, date) && !away(absences, m.id, date) && inRoster(crew, m.id));
       if (!here.length) continue;
       // Three mates left and a duty for four hands out three lots of points, not four.
-      const slots = Math.min(d.group_size, here.length);
+      const slots = Math.min(d.group_size, linked ? linked.group_size : d.group_size, here.length);
       // An instance nobody has touched yet has no snapshot, so it is worth what the duty is worth
       // now — which is also what it will snapshot as the moment anyone ticks it.
       const price = priced.get(`${d.id}|${date}`) ?? d.effort_points;
@@ -182,6 +208,35 @@ export function assignees(
   anchor: string,
   duties: Duty[] = [duty],
 ): Slot[] {
+  // A follower reads its leader's answer for the day. Resolved here too, not only in rota(), so a
+  // caller asking about one duty gets the same answer the rota does.
+  const lead = leaderOf(duty, duties);
+  const leaderSlots =
+    lead && isDueOn(lead, dueOn, anchor) ? slotsFor(lead, dueOn, members, absences, events, anchor, duties, null) : null;
+  return slotsFor(duty, dueOn, members, absences, events, anchor, duties, leaderSlots);
+}
+
+/**
+ * The slots for one instance. `leaderSlots` is the leader's resolved answer when this duty comes
+ * with one that is due today; otherwise null and the duty takes its own turn.
+ *
+ * A FOLLOWER INHERITS ITS LEADER'S HOLDERS — after claims and the away fallback, so it moves with
+ * whoever is actually doing the leader today — up to its own group_size, in the leader's slot order.
+ * That is one rule, and "the dishes-holder plans the meals" holds by construction under a rota
+ * pick, a claim, or an absence. The one exception is the follower's OWN instance: anything recorded
+ * on it (a Done, an offer taken) wins exactly as it does for any duty, so a mate who takes Dishes
+ * but cannot plan meals can still offer the meal planning on its own.
+ */
+function slotsFor(
+  duty: Duty,
+  dueOn: string,
+  members: Member[],
+  absences: Absence[],
+  events: ChoreEvent[],
+  anchor: string,
+  duties: Duty[],
+  leaderSlots: Slot[] | null,
+): Slot[] {
   const settled = live(events);
   const inst = settled.filter((e) => e.duty_id === duty.id && e.due_on === dueOn).sort(byId);
 
@@ -197,12 +252,18 @@ export function assignees(
   // that was on screen a second ago. Other duties on the same day still count — that is how three
   // duties due today land on three different mates.
   const past = settled.filter((e) => e.due_on < dueOn || e.duty_id !== duty.id);
+  // The leader's holders, de-duplicated (one mate never holds two halves), capped at this duty's own
+  // group_size. A leader with nobody available leaves the follower to take its own turn rather than
+  // vanish from the day.
+  const inherited = leaderSlots ? [...new Set(leaderSlots.map((s) => s.holderId))].slice(0, duty.group_size) : [];
   const base =
-    duty.schedule === 'fixed'
-      ? duty.fixed_member_id
-        ? [duty.fixed_member_id]
-        : []
-      : pick(duty, dueOn, members, absences, past, anchor, duties);
+    inherited.length > 0
+      ? inherited
+      : duty.schedule === 'fixed'
+        ? duty.fixed_member_id
+          ? [duty.fixed_member_id]
+          : []
+        : pick(duty, dueOn, members, absences, past, anchor, duties);
 
   // A mate with an event here but no longer in the pick — the roster changed under them — keeps their
   // slot, because their Done is real. Pure claimers are not owners: their 'done' belongs to the slot
@@ -297,27 +358,49 @@ export function rota(
   // latest for its slot.
   const provisional: ChoreEvent[] = [];
   const out: RotaRow[] = [];
+
+  // Followers, grouped under the leader they come with. Each is placed straight after its leader so
+  // it reads the slots the leader was just given — not a fresh pick, which could differ once other
+  // duties' provisional credit has landed in between.
+  const followers = new Map<string, Duty[]>();
+  for (const d of active) {
+    const lead = leaderOf(d, duties);
+    if (lead) followers.set(lead.id, [...(followers.get(lead.id) ?? []), d]);
+  }
+
+  const place = (duty: Duty, date: string, leaderSlots: Slot[] | null): Slot[] => {
+    const slots = slotsFor(duty, date, members, absences, [...events, ...provisional], anchor, duties, leaderSlots);
+    for (const s of slots)
+      // A slot already past its due date with no Done is MISSED, and a missed slot gets NO
+      // provisional credit. Crediting it would push whoever missed it down the queue — credit for
+      // work nobody did, arriving through the assignment engine instead of through donePoints.
+      if (!s.done && date >= today)
+        provisional.push({
+          id: `~${date}|${duty.id}|${s.holderId}`,
+          duty_id: duty.id,
+          member_id: s.holderId,
+          outcome: 'done',
+          to_member_id: null,
+          due_on: date,
+          reverses_id: null,
+          points: duty.effort_points,
+        });
+    out.push({ date, duty, slots });
+    return slots;
+  };
+
   for (let i = 0; i < days; i++) {
     const date = new Date((dayNo(from) + i) * DAY).toISOString().slice(0, 10);
     for (const duty of active) {
       if (!isDueOn(duty, date, anchor)) continue;
-      const slots = assignees(duty, date, members, absences, [...events, ...provisional], anchor, duties);
-      for (const s of slots)
-        // A slot already past its due date with no Done is MISSED, and a missed slot gets NO
-        // provisional credit. Crediting it would push whoever missed it down the queue — credit for
-        // work nobody did, arriving through the assignment engine instead of through donePoints.
-        if (!s.done && date >= today)
-          provisional.push({
-            id: `~${date}|${duty.id}|${s.holderId}`,
-            duty_id: duty.id,
-            member_id: s.holderId,
-            outcome: 'done',
-            to_member_id: null,
-            due_on: date,
-            reverses_id: null,
-            points: duty.effort_points,
-          });
-      out.push({ date, duty, slots });
+      // Linked today: it is placed below, right after its leader. Its leader is not due today: it
+      // takes its own turn here like any other duty.
+      const lead = leaderOf(duty, duties);
+      if (lead && isDueOn(lead, date, anchor)) continue;
+      const slots = place(duty, date, null);
+      // The follower's points are credited before the next duty is picked, so the leader's holder
+      // carries both loads into tomorrow's picks — the pair costs what it costs, no more, no less.
+      for (const f of followers.get(duty.id) ?? []) if (isDueOn(f, date, anchor)) place(f, date, slots);
     }
   }
   return out;
