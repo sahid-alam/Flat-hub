@@ -42,6 +42,14 @@ function Routes() {
         headerBackButtonDisplayMode: 'minimal',
         headerLeft: Back, // every pushed screen, not just duties/manage: see Back below
         contentStyle: { backgroundColor: c.ground },
+        // Web only: the JS card stack reads cardStyle, the native stack ignores it. A spread, because the
+        // types follow stack.ts (native), which has no such option. The card stack has a "page
+        // overflow" mode for every non-modal screen: it drops the screen's height limit and expects
+        // document.body to scroll. index.html sets `body { overflow: hidden }`, so nothing scrolls and
+        // a screen taller than the phone is cut off — Edit duty's Save sat 1,059px below the fold,
+        // unreachable. flex: 1 bounds the card again, so each screen's own ScrollView does the
+        // scrolling, as modals already do.
+        ...{ cardStyle: { flex: 1, backgroundColor: c.ground } },
         // The push. On web `presentation: 'modal'` is a no-op, so the modal screens below name
         // slide_from_bottom themselves; on native the presentation still does the work.
         animation: 'slide_from_right',
