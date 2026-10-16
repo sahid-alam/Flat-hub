@@ -255,6 +255,7 @@ export default function Duties() {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <T size={14} soft style={{ flex: 1 }}>
           {`${owner.split(' ')[0]} offered it · due ${dayLabel(r.date)}`}
+          {slot.makeup && ' · make-up'}
           {andCarried(r, slot) && ` ·${andCarried(r, slot).replace(/\.$/, '')}`}
           {onThisAlready && ' · you are on this one too'}
         </T>

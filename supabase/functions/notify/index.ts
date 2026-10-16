@@ -92,7 +92,8 @@ async function dutyDueToday(db: SupabaseClient, today: string): Promise<Recipien
     // The turn rules, or the push names whoever the points pick would, not who the Duties tab shows.
     db.from('duty_rule').select('duty_id, starts_on, turns, on_miss, roster, created_at').order('starts_on').order('created_at'),
     db.from('member').select('id, household_id, joined_on, left_on'),
-    db.from('member_absence').select('member_id, household_id, from_date, to_date'),
+    // created_at: the rota only counts an absence on a day it was recorded by (20261017120000).
+    db.from('member_absence').select('member_id, household_id, from_date, to_date, created_at'),
     // The rota only ever looks backwards from `due_on`, so there is no reason to read the future.
     // ponytail: PostgREST caps this at max_rows = 1000 (supabase/config.toml, and the same on the
     // hosted project). assignee() computes each mate's fair-share deficit over EVERY event since

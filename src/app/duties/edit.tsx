@@ -403,7 +403,7 @@ export default function EditDuty() {
       ) : (
         lines.length > 0 && (
           <Block tone="raised">
-            <SectionLabel>So the rota comes out like this</SectionLabel>
+            <SectionLabel>{inOrder && duty ? 'From tomorrow, the rota goes' : 'So the rota comes out like this'}</SectionLabel>
             {lines.map((line, i) => (
               <T key={i} size={15} weight="600">
                 {line}

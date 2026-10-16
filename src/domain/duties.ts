@@ -53,6 +53,13 @@ export type DutyRule = {
   on_miss: 'makeup' | 'redo' | 'none';
   roster: string[] | null;
   created_at: string;
+  // What else decided each day, frozen with the rule so a later edit cannot re-decide one. A rule
+  // without them (older data, a test) reads them off the duty as it is now.
+  every_days?: number | null;
+  weekdays?: number[] | null;
+  group_size?: number;
+  schedule?: 'rolling' | 'fixed';
+  follows_id?: string | null;
 };
 
 export type ChoreEvent = {
@@ -64,6 +71,8 @@ export type ChoreEvent = {
   due_on: string;
   reverses_id: string | null;
   points: number; // the duty's price AT THE TIME, snapshotted by the db. Never re-priced.
+  /** Stamped by the server (20261017120000). A Done recorded after its day still pays, but it is late. */
+  created_at?: string;
 };
 
 /** An offer or a vouch on one slot of one instance. Neither carries points; neither moves the rota. */
@@ -361,28 +370,51 @@ function replay(
   until: string,
 ): { turn: { ids: string[]; makeup: string[] } | null; owed: Map<string, number> } {
   const owed = new Map<string, number>();
-  // Followers and fixed duties never take turns of their own here (a follower keeps no roster).
-  if (!duty.rules?.length || duty.schedule === 'fixed' || duty.follows_id) return { turn: null, owed };
+  if (!duty.rules?.length) return { turn: null, owed };
   const rules = [...duty.rules].sort((a, b) => text(a.starts_on, b.starts_on) || text(a.created_at, b.created_at));
   const add = (id: string, n: number) => owed.set(id, Math.max(0, (owed.get(id) ?? 0) + n));
+  // THE PAST STAYS THE PAST. A day is judged on what was known by its end: an absence counts only if
+  // it was recorded by then, and only a Done recorded by then keeps the turn from being missed. So
+  // nothing added later — a backdated absence, a Done ticked next morning — can cancel a miss or move
+  // the list. (Rows without a stamp, like the rota's own provisional credit, are always in time.)
+  const recordedBy = (at: string | undefined, day: string) => !at || istDate(at) <= day;
+  const timely = settled.filter((e) => recordedBy(e.created_at, e.due_on));
   let redo: string[] = []; // 'redo': on the very next instance
   const armed = new Set<string>(); // owed, and their regular turn just passed: the next instance is their make-up
   let rule: DutyRule | undefined;
   let ptr = 0;
 
-  for (const date of dueDates(duty, rules[0].starts_on, until, anchor)) {
+  for (let n = dayNo(rules[0].starts_on); n <= dayNo(until); n++) {
+    const date = new Date(n * DAY).toISOString().slice(0, 10);
     const r = ruleAt(rules, date)!;
-    if (r !== rule) [rule, ptr] = [r, 0];
-    if (r.turns !== 'order') {
-      if (date === until) return { turn: null, owed };
+    // The day's shape comes off the rule in force, not off the duty as it is now.
+    const shape = {
+      ...duty,
+      every_days: 'every_days' in r ? (r.every_days ?? null) : duty.every_days,
+      weekdays: 'weekdays' in r ? (r.weekdays ?? null) : duty.weekdays,
+    };
+    if (!isDueOn(shape, date, anchor)) continue;
+    // Only a new LIST starts again at the top. A change to what a miss costs (or a re-save of the same
+    // list) leaves the rotation exactly where it was.
+    if (r !== rule) {
+      if (!rule || !sameList(rule.roster, r.roster)) ptr = 0;
+      rule = r;
+    }
+    // A stored rule always has these keys; null there means "not linked", not "unknown". Only a rule
+    // without the key at all (older data, a test) falls back to the duty as it is now.
+    const follows = 'follows_id' in r ? r.follows_id : duty.follows_id;
+    const ownTurns = r.turns === 'order' && (r.schedule ?? duty.schedule) === 'rolling' && !follows;
+    if (!ownTurns) {
+      if (date === until) return { turn: null, owed: withRedo(owed, redo) };
       continue;
     }
+    const known = absences.filter((a) => recordedBy(a.created_at, date));
     const order = r.roster ?? members.map((m) => m.id).sort();
     const can = (id: string) => {
       const m = members.find((x) => x.id === id);
-      return !!m && onRoll(m, date) && !away(absences, id, date);
+      return !!m && onRoll(m, date) && !away(known, id, date);
     };
-    const k = Math.max(1, duty.group_size);
+    const k = Math.max(1, r.group_size ?? duty.group_size);
 
     const makeup = [...new Set([...redo, ...armed])].filter(can).slice(0, k);
     for (const id of makeup) {
@@ -403,7 +435,7 @@ function replay(
     // so a miss today is paid after their next turn, not tomorrow.
     for (const id of regular) if ((owed.get(id) ?? 0) > 0) armed.add(id);
     if (date < today)
-      for (const s of resolve(duty, date, absences, settled, ids))
+      for (const s of resolve({ ...duty, group_size: k }, date, known, timely, ids))
         if (!s.done) {
           if (r.on_miss === 'makeup') add(s.holderId, 1);
           else if (r.on_miss === 'redo' && !redo.includes(s.holderId)) redo.push(s.holderId);
@@ -411,6 +443,9 @@ function replay(
   }
   return { turn: null, owed: withRedo(owed, redo) };
 }
+
+const sameList = (a: string[] | null, b: string[] | null): boolean =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((id, i) => id === b[i]));
 
 /** A pending redo is a make-up turn owed too, as far as anyone reading the count is concerned. */
 const withRedo = (owed: Map<string, number>, redo: string[]): Map<string, number> => {

@@ -38,6 +38,14 @@ create table public.duty_rule (
   -- The order, explicitly. null only for a 'points' rule (where null means "the whole flat"); an
   -- order rule with null falls back to member id order in the domain, but nothing writes one.
   roster uuid[],
+  -- Everything else the replay reads about a day, so no later edit can re-decide one: which days were
+  -- due, how many at once, and whether the duty had turns of its own at all (not fixed, not a follower).
+  every_days int,
+  weekdays int[],
+  group_size int not null,
+  schedule text not null,
+  fixed_member_id uuid,
+  follows_id uuid,
   created_at timestamptz not null default now(),
   unique (household_id, id),
   foreign key (household_id, duty_id) references public.duty (household_id, id)
@@ -60,20 +68,32 @@ create function private.record_duty_rule() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'UPDATE'
-     and new.roster is not distinct from old.roster
-     and new.turns = old.turns
-     and new.on_miss = old.on_miss then
+     and (new.roster, new.turns, new.on_miss, new.every_days, new.weekdays, new.group_size, new.schedule,
+          new.fixed_member_id, new.follows_id)
+         is not distinct from
+         (old.roster, old.turns, old.on_miss, old.every_days, old.weekdays, old.group_size, old.schedule,
+          old.fixed_member_id, old.follows_id) then
     return new;
   end if;
-  insert into public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster)
+  -- An order rule always carries its list. A duty can reach order mode with no roster (one that was
+  -- brought along by another, which clears it, then unlinked), and "everyone" must not mean a
+  -- different order to each reader: snapshot it the way the app shows it, by display name.
+  insert into public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster,
+                                every_days, weekdays, group_size, schedule, fixed_member_id, follows_id)
   values (new.household_id, new.id,
           case when tg_op = 'INSERT' then private.ist_today() else private.ist_today() + 1 end,
-          new.turns, new.on_miss, new.roster);
+          new.turns, new.on_miss,
+          case when new.roster is null and new.turns = 'order'
+               then (select array_agg(m.id order by m.display_name, m.id) from public.member m
+                     where m.household_id = new.household_id and m.left_on is null)
+               else new.roster end,
+          new.every_days, new.weekdays, new.group_size, new.schedule, new.fixed_member_id, new.follows_id);
   return new;
 end $$;
 revoke all on function private.record_duty_rule(), private.ist_today() from public;
 
-create trigger duty_rule_record after insert or update of roster, turns, on_miss on public.duty
+create trigger duty_rule_record after insert or update of
+    roster, turns, on_miss, every_days, weekdays, group_size, schedule, fixed_member_id, follows_id on public.duty
   for each row execute function private.record_duty_rule();
 
 -- Every duty that exists today gets its first rule, starting TOMORROW: today's turns stay exactly as
@@ -81,9 +101,49 @@ create trigger duty_rule_record after insert or update of roster, turns, on_miss
 -- under the old rule and owe nothing — a clean start. A duty whose roster was null ("everyone") gets
 -- its list snapshotted in the order the app shows it (display name), so every client agrees on who
 -- is first.
-insert into public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster)
+insert into public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster,
+                              every_days, weekdays, group_size, schedule, fixed_member_id, follows_id)
 select d.household_id, d.id, private.ist_today() + 1, d.turns, d.on_miss,
        coalesce(d.roster, (select array_agg(m.id order by m.display_name, m.id)
                            from public.member m
-                           where m.household_id = d.household_id and m.left_on is null))
+                           where m.household_id = d.household_id and m.left_on is null)),
+       d.every_days, d.weekdays, d.group_size, d.schedule, d.fixed_member_id, d.follows_id
 from public.duty d;
+
+-- ---------------------------------------------------------------- the past stays the past
+-- A missed turn is computed from what was KNOWN by the end of its day, so nothing added later can
+-- cancel it: not an absence recorded after the fact, not a Done ticked the next morning. That needs
+-- a creation time the client cannot choose. Both tables had a table-wide insert grant, so a client
+-- could send any created_at it liked; the server now stamps it, the way set_chore_points stamps the
+-- price. (Recording a past absence still works for the kitty — it just cannot rewrite a duty day.)
+create function private.stamp_created_at() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.created_at := now();
+  return new;
+end $$;
+revoke all on function private.stamp_created_at() from public;
+create trigger absence_stamp before insert on public.member_absence
+  for each row execute function private.stamp_created_at();
+create trigger chore_event_stamp before insert on public.chore_event
+  for each row execute function private.stamp_created_at();
+
+-- An absence is recorded by the mate who is away. Until now any mate could record one for any other —
+-- which also moves kitty shares (the 3-day rule) and passes a mate over for duty turns.
+drop policy absence_insert on public.member_absence;
+create policy absence_insert on public.member_absence for insert to authenticated
+  with check (
+    household_id in (select private.my_household_ids())
+    and member_id in (
+      select id from public.member where user_id = (select auth.uid()) and household_id = member_absence.household_id)
+  );
+
+-- And it can be taken back only before it starts, or on the day it was added (a mis-tap). Once it has
+-- started it decided duty days, so removing it would re-decide them. A closed month already refused.
+drop policy absence_delete_own on public.member_absence;
+create policy absence_delete_own on public.member_absence for delete to authenticated
+  using (
+    member_id in (select id from public.member where user_id = (select auth.uid()))
+    and (from_date > (now() at time zone 'Asia/Kolkata')::date
+         or (created_at at time zone 'Asia/Kolkata')::date = (now() at time zone 'Asia/Kolkata')::date)
+  );

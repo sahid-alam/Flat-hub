@@ -421,10 +421,12 @@ INSERT INTO public.duty (id, household_id, name, effort_points, every_days, week
 -- writes the first rule for each duty itself, exactly as the migration's backfill does on a real
 -- flat: strict order with make-up turns, starting on the seed's "today", the list snapshotted in
 -- display-name order where the duty has none of its own.
-INSERT INTO public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster)
+INSERT INTO public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster,
+                              every_days, weekdays, group_size, schedule, fixed_member_id, follows_id)
 SELECT d.household_id, d.id, date '2026-10-09', d.turns, d.on_miss,
        coalesce(d.roster, (SELECT array_agg(m.id ORDER BY m.display_name, m.id) FROM public.member m
-                           WHERE m.household_id = d.household_id AND m.left_on IS NULL))
+                           WHERE m.household_id = d.household_id AND m.left_on IS NULL)),
+       d.every_days, d.weekdays, d.group_size, d.schedule, d.fixed_member_id, d.follows_id
 FROM public.duty d;
 
 -- Every date above was written on 2026-10-09 IST. Left alone they rot: the fridge fills with

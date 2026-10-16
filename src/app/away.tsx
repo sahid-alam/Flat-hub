@@ -23,8 +23,12 @@ export default function Away() {
   const w = presenceWeights(month, books.members, books.absences);
   const mates = [...members].sort((a, b) => a.display_name.localeCompare(b.display_name));
   // both ends: an absence can straddle 28 Sep - 3 Oct. A closed month refuses the delete, so don't offer it.
-  const frozen = (a: { from_date: string; to_date: string }) =>
-    isClosed(a.from_date.slice(0, 7), closes ?? []) || isClosed(a.to_date.slice(0, 7), closes ?? []);
+  // A started absence already decided duty days, so only one that has not begun, or was added today
+  // (a mis-tap), can come off (20261017120000). The database refuses the rest anyway.
+  const frozen = (a: { from_date: string; to_date: string; created_at: string }) =>
+    isClosed(a.from_date.slice(0, 7), closes ?? []) ||
+    isClosed(a.to_date.slice(0, 7), closes ?? []) ||
+    (a.from_date <= today() && istDate(a.created_at) !== today());
 
   async function save() {
     setBusy(true);
@@ -99,7 +103,7 @@ export default function Away() {
                   </View>
                   {a.member_id === me.id &&
                     (frozen(a) ? (
-                      <Chip kind="late" label="closed" />
+                      <Chip kind="late" label={a.from_date <= today() ? 'started' : 'closed'} />
                     ) : (
                       <Pressable
                         accessibilityRole="button"

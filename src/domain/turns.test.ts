@@ -124,6 +124,12 @@ test('switching the penalty to none never forgives a make-up already owed', () =
   assert.deepEqual(line(d, events, '2026-10-04', 3, '2026-10-04'), ['a', 'a*', 'b']);
 });
 
+test('changing only what a miss costs carries on down the list from where it was', () => {
+  const d = ordered([rule(['a', 'b', 'c']), rule(['a', 'b', 'c'], 'none', '2026-10-03', '2')]);
+  const events = [done('a', ANCHOR), done('b', '2026-10-02')];
+  assert.deepEqual(line(d, events, '2026-10-03', 3, '2026-10-03'), ['c', 'a', 'b']);
+});
+
 test('the debt is the holder’s: whoever took the offer took the turn', () => {
   const d = ordered([rule(['a', 'b', 'c'])]);
   const claim: ChoreEvent = { ...done('a', ANCHOR), outcome: 'swapped', to_member_id: 'b' };
@@ -154,4 +160,46 @@ test('the live Garbage dump: from the first rule day the list starts at the top,
   const days = rota([d], members, [], history, '2026-10-19', 3, '2026-10-05', '2026-10-19');
   assert.deepEqual(days.map((r) => r.slots[0].holderId), ['Anant', 'Adnan', 'Ansh']);
   assert.deepEqual(Object.fromEntries(owedTurns(d, members, [], history, '2026-10-05', '2026-10-19')), {});
+});
+
+// ---------------------------------------------------------------- the past stays the past
+
+test('an absence recorded after the day cannot cancel a miss or move the list', () => {
+  const d = ordered([rule(['a', 'b', 'c'])]);
+  // a missed the 1st, then on the 3rd recorded being away on the 1st.
+  const late: Absence[] = [{ member_id: 'a', from_date: ANCHOR, to_date: ANCHOR, created_at: '2026-10-03T05:00:00Z' }];
+  const events = [done('b', '2026-10-02'), done('c', '2026-10-03')];
+  assert.deepEqual(Object.fromEntries(owedTurns(d, six, late, events, ANCHOR, '2026-10-04')), { a: 1 });
+  // Recorded beforehand, the same absence passes a over and nothing is owed.
+  const early: Absence[] = [{ ...late[0], created_at: '2026-09-30T05:00:00Z' }];
+  assert.equal(owedTurns(d, six, early, [done('b', ANCHOR), done('c', '2026-10-02'), done('a', '2026-10-03')], ANCHOR, '2026-10-04').has('a'), false);
+});
+
+test('a Done ticked after its day still pays, but the turn was missed', () => {
+  const d = ordered([rule(['a', 'b', 'c'])]);
+  const late = { ...done('a', ANCHOR), created_at: '2026-10-02T04:00:00Z' };
+  assert.deepEqual(owed(d, [late, done('b', '2026-10-02')], '2026-10-03'), { a: 1 });
+  assert.equal(donePoints([late], 'a'), 3, 'the work was done, so it still earns its points');
+  const onTime = { ...done('a', ANCHOR), created_at: '2026-10-01T15:00:00Z' }; // 20:30 IST the same day
+  assert.deepEqual(owed(d, [onTime, done('b', '2026-10-02')], '2026-10-03'), {});
+});
+
+test('changing how often a duty runs re-decides no day already past', () => {
+  const before = ordered([rule(['a', 'b', 'c'])]);
+  // From the 4th it runs every other day: the 1st–3rd must keep their owners and their debts.
+  const after = ordered(
+    [{ ...rule(['a', 'b', 'c']), every_days: 1, weekdays: null }, { ...rule(['a', 'b', 'c'], 'makeup', '2026-10-04', '2'), every_days: 2, weekdays: null }],
+    { every_days: 2 },
+  );
+  const events = [done('b', '2026-10-02')];
+  for (const d of [before, after]) assert.deepEqual(owed(d, events, '2026-10-04'), { a: 1, c: 1 });
+});
+
+test('linking a duty to another hides no make-up turn already owed', () => {
+  // As stored: the first rule says "not linked" outright (null), which must not read as "ask the duty".
+  const linked = ordered([{ ...rule(['a', 'b', 'c']), follows_id: null }, { ...rule(['a', 'b', 'c'], 'makeup', '2026-10-03', '2'), follows_id: 'dishes' }], {
+    follows_id: 'dishes',
+    roster: null,
+  });
+  assert.deepEqual(owed(linked, [], '2026-10-06'), { a: 1, b: 1 });
 });
