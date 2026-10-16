@@ -203,3 +203,10 @@ test('linking a duty to another hides no make-up turn already owed', () => {
   });
   assert.deepEqual(owed(linked, [], '2026-10-06'), { a: 1, b: 1 });
 });
+
+test('an Undo recorded after the day still undoes the Done: the turn was missed', () => {
+  const d = ordered([rule(['a', 'b', 'c'])]);
+  const tick = { ...done('a', ANCHOR), created_at: '2026-10-01T10:00:00Z' };
+  const undo = { ...done('a', ANCHOR), reverses_id: tick.id, created_at: '2026-10-02T10:00:00Z' };
+  assert.deepEqual(owed(d, [tick, undo, done('b', '2026-10-02')], '2026-10-03'), { a: 1 });
+});
