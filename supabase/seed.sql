@@ -417,6 +417,16 @@ INSERT INTO public.duty (id, household_id, name, effort_points, every_days, week
   VALUES ('019a0006-0000-7000-8000-000000000007', '019a0000-0000-7000-8000-00000000000f', 'Meal planning', 1, 1, NULL, 'rolling', NULL, true, '2026-09-14 03:30:00+00', true, 1, NULL,
           '019a000a-0000-7000-8000-000000000001', '019a0006-0000-7000-8000-000000000001');
 
+-- Turn rules (20261017120000). The trigger that writes them is off under replica mode, so the seed
+-- writes the first rule for each duty itself, exactly as the migration's backfill does on a real
+-- flat: strict order with make-up turns, starting on the seed's "today", the list snapshotted in
+-- display-name order where the duty has none of its own.
+INSERT INTO public.duty_rule (household_id, duty_id, starts_on, turns, on_miss, roster)
+SELECT d.household_id, d.id, date '2026-10-09', d.turns, d.on_miss,
+       coalesce(d.roster, (SELECT array_agg(m.id ORDER BY m.display_name, m.id) FROM public.member m
+                           WHERE m.household_id = d.household_id AND m.left_on IS NULL))
+FROM public.duty d;
+
 -- Every date above was written on 2026-10-09 IST. Left alone they rot: the fridge fills with
 -- things that expired months ago, "expiring soon" empties, and the rota's history stops touching
 -- today. The last seed rotted exactly this way and a later one patched it with a one-off shift.
@@ -451,6 +461,8 @@ begin
   -- the rota. duty.created_at is its anchor, so it moves with everything else or the cadence
   -- lands on different weekdays than the history it is explaining.
   update public.duty        set created_at  = created_at  + drift;
+  update public.duty_rule   set starts_on   = starts_on   + drift,
+                                created_at  = created_at  + drift;
   update public.chore_event set due_on      = due_on      + drift,
                                 occurred_at = occurred_at + drift,
                                 created_at  = created_at  + drift;

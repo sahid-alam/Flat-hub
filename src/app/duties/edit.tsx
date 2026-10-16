@@ -18,7 +18,7 @@ import { Pressable, Switch, View } from 'react-native';
 import { useHousehold, type DutyRow } from '@/lib/books';
 import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
-import { confirm, sayError } from '@/lib/util';
+import { confirm, sayError, today } from '@/lib/util';
 import { cadenceLabel, previewRota } from '@/ui/duties';
 import { Stack } from '@/ui/stack';
 import {
@@ -49,7 +49,20 @@ const CADENCES = [
   { value: 'dn', label: 'Every N days' },
 ] as const;
 type Cadence = (typeof CADENCES)[number]['value'];
-type Question = 'often' | 'worth' | 'who' | 'area' | 'with' | 'brings';
+type Question = 'often' | 'worth' | 'who' | 'miss' | 'area' | 'with' | 'brings';
+type Turns = 'order' | 'points';
+type OnMiss = 'makeup' | 'redo' | 'none';
+
+/** What a missed turn costs, in the words the sheet and the row both use. */
+const ON_MISS: { value: OnMiss; label: string; detail: string }[] = [
+  {
+    value: 'makeup',
+    label: 'Make-up turn',
+    detail: 'The list moves on. Whoever missed does one extra turn, straight after their next regular turn.',
+  },
+  { value: 'redo', label: 'Do it again', detail: 'Whoever missed takes the very next day as well, then the list carries on.' },
+  { value: 'none', label: 'Nothing more', detail: 'The list moves on. The missed turn earns no points, and that is all.' },
+];
 
 type Payload = {
   name: string;
@@ -64,6 +77,8 @@ type Payload = {
   roster: string[] | null;
   area_id: string | null;
   follows_id: string | null;
+  turns: Turns;
+  on_miss: OnMiss;
 };
 
 const cadenceOf = (d: DutyRow | null): Cadence =>
@@ -92,6 +107,9 @@ export default function EditDuty() {
   // flat; opening the form materialises that so "who's in" and the preview have something to show.
   const [roster, setRoster] = useState<string[]>(duty?.roster ?? mates.map((m) => m.id));
   const [meals, setMeals] = useState(duty?.plans_meals ?? false);
+  // Strict order is the default: it is what a flat means by "a rota" (20261017120000).
+  const [turns, setTurns] = useState<Turns>(duty?.turns ?? 'order');
+  const [onMiss, setOnMiss] = useState<OnMiss>(duty?.on_miss ?? 'makeup');
   const [areaId, setAreaId] = useState<string | null>(duty?.area_id ?? null);
   // A link to a retired leader already binds nothing (leaderOf), so the form opens without it and
   // saving clears it — otherwise it would keep forcing roster to null behind a "Who's in" that shows one.
@@ -115,6 +133,8 @@ export default function EditDuty() {
   // Active only, as leaderOf() resolves it: a retired leader binds nothing, so the screen must not say it does.
   const leader = follows ? duties.find((d) => d.id === follows && d.active) : undefined;
   const others = duties.filter((d) => d.active && d.id !== selfId);
+  // Order mode applies to a duty with turns of its own: never a follower, never "always one mate".
+  const inOrder = turns === 'order' && !follows && !fixed;
   // One level deep, the same two rules the trigger holds (20261014175243). A duty that brings others
   // along cannot itself come with one, and a fixed duty ("always Ansh") cannot come with anything.
   const leaders = others.filter((d) => !d.follows_id);
@@ -154,12 +174,18 @@ export default function EditDuty() {
     // A follower's crew is its leader's, so it keeps no roster (duty_follows_no_roster). Otherwise
     // everybody, in member order, is the same as no roster — store null so the duty follows the flat
     // as mates come and go.
-    roster:
-      follows || (inRoster.length === mates.length && inRoster.every((rid, i) => rid === mates[i].id))
-        ? null
-        : inRoster,
+    // In order mode the list IS the rule, so it is always saved as written: "everyone" stored as null
+    // would leave each client to guess the order. Otherwise everybody, in member order, is the same
+    // as no roster — null, so the duty follows the flat as mates come and go.
+    roster: follows
+      ? null
+      : inOrder || !(inRoster.length === mates.length && inRoster.every((rid, i) => rid === mates[i].id))
+        ? inRoster
+        : null,
     area_id: areaId,
     follows_id: follows,
+    turns,
+    on_miss: onMiss,
   });
 
   async function setLinks(list: string[]) {
@@ -244,6 +270,8 @@ export default function EditDuty() {
             schedule: 'rolling',
             fixed_member_id: null,
             follows_id: null,
+            // The draft rule, starting on the preview's first day, so the preview is the order itself.
+            rules: inOrder ? [{ starts_on: today(), turns, on_miss: onMiss, roster: inRoster, created_at: '~' }] : [],
           },
           members,
           nameOf,
@@ -261,7 +289,7 @@ export default function EditDuty() {
     ? `With ${leader.name}`
     : fixed
       ? `Always ${duty?.fixed_member_id ? first(duty.fixed_member_id) : 'one mate'}`
-      : `${group > 1 ? `${group} together, ` : ''}${inRoster.length === mates.length ? 'everyone' : `${inRoster.length} of ${mates.length}`} in turn`.replace(/^./, (x) => x.toUpperCase());
+      : `${group > 1 ? `${group} together · ` : ''}${inOrder ? 'in order' : 'furthest behind'} · ${inRoster.length === mates.length ? 'everyone' : `${inRoster.length} of ${mates.length}`}`.replace(/^./, (x) => x.toUpperCase());
 
   return (
     <Screen
@@ -292,6 +320,17 @@ export default function EditDuty() {
         <Rule />
         <Row label="Who does it" detail={who} icon={{ ios: 'person.2', android: 'group' }} onPress={() => setOpen('who')} />
         <Rule />
+        {inOrder && (
+          <>
+            <Row
+              label="If a turn is missed"
+              detail={ON_MISS.find((o) => o.value === onMiss)!.label}
+              icon={{ ios: 'exclamationmark.circle', android: 'error_outline' }}
+              onPress={() => setOpen('miss')}
+            />
+            <Rule />
+          </>
+        )}
         <Row
           label="Area"
           detail={areas.find((a) => a.id === areaId)?.name ?? 'None'}
@@ -371,8 +410,9 @@ export default function EditDuty() {
               </T>
             ))}
             <T size={13} soft>
-              Then it starts again. Effort points still come first, so whoever falls behind is picked earlier than the
-              order says.
+              {inOrder
+                ? `Then it starts again from the top.${duty ? ' A change starts tomorrow: today\u2019s turn stays as it is.' : ''}`
+                : 'Then it starts again. Effort points still come first, so whoever falls behind is picked earlier than the order says.'}
               {shownFollowers.length > 0 &&
                 ` On a day ${shownFollowers.length === 1 ? 'it is' : 'they are'} due too, ${list(shownFollowers.map(dutyName))} ${shownFollowers.length === 1 ? 'goes' : 'go'} with it.`}
             </T>
@@ -441,6 +481,28 @@ export default function EditDuty() {
             </T>
           ) : (
             <>
+              {!fixed && (
+                <>
+                  <Rule />
+                  <T size={13.5} weight="600" soft>
+                    How turns go
+                  </T>
+                  <Choice
+                    label="How turns go"
+                    options={[
+                      { value: 'order' as Turns, label: 'In this order' },
+                      { value: 'points' as Turns, label: 'Furthest behind' },
+                    ]}
+                    value={turns}
+                    onChange={setTurns}
+                  />
+                  <T size={13} soft>
+                    {turns === 'order'
+                      ? 'Straight down the list below, one turn each, every time it is due. Someone away is skipped that day.'
+                      : 'Whoever is furthest behind on points across every duty goes next. The list below only breaks ties.'}
+                  </T>
+                </>
+              )}
               <Rule />
               <T size={13.5} weight="600" soft>
                 Who&apos;s in
@@ -515,6 +577,19 @@ export default function EditDuty() {
               )}
             </>
           )}
+        </Sheet>
+      )}
+
+      {open === 'miss' && (
+        <Sheet title="If a turn is missed" onClose={() => setOpen(null)}>
+          <Choice label="If a turn is missed" options={ON_MISS.map(({ value, label }) => ({ value, label }))} value={onMiss} onChange={setOnMiss} />
+          <T size={13} soft>
+            {ON_MISS.find((o) => o.value === onMiss)!.detail}
+          </T>
+          <T size={13} soft>
+            A turn counts as missed when nobody ticked it by the end of its day. Changing this never cancels a make-up
+            turn that is already waiting.
+          </T>
         </Sheet>
       )}
 

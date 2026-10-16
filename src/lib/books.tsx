@@ -161,7 +161,7 @@ async function load(userId: string): Promise<Data | null> {
   if (!me) return null;
   const h = me.household_id as string;
   const [household, members, absences, spends, lines, entries, products, lots, moves, uoms, shopping, closes, duties, choreEvents,
-    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs, areas] =
+    bills, billShares, billPayments, meals, dutyMarks, dutyPhotos, prefs, areas, dutyRules] =
     await Promise.all([
       supabase.from('household').select('*').eq('id', h).single(),
       supabase.from('member').select('*').eq('household_id', h).order('display_name'),
@@ -195,6 +195,12 @@ async function load(userId: string): Promise<Data | null> {
       supabase.from('duty_photo').select('*').eq('household_id', h).order('created_at'),
       supabase.from('notification_pref').select('id, member_id, trigger, mode').eq('household_id', h),
       supabase.from('duty_area').select('id, name, position').eq('household_id', h).order('position').order('name'),
+      supabase
+        .from('duty_rule')
+        .select('duty_id, starts_on, turns, on_miss, roster, created_at')
+        .eq('household_id', h)
+        .order('starts_on')
+        .order('created_at'),
     ]);
   // ponytail: loads the whole household every time; page by month once a flat has years of rows
   // The kitty's tables are fatal — without them there is no flat. The stock tables and month_close
@@ -216,7 +222,12 @@ async function load(userId: string): Promise<Data | null> {
     uoms: uoms.data ?? [],
     shopping: shopping.data ?? [],
     closes: closes.data ?? null,
-    duties: duties.data ?? [],
+    // Each duty carries its own rule history (20261017120000): the rota replays it to decide whose turn
+    // each day was. A DB without the table gives none, and the duty falls back to the points pick.
+    duties: (duties.data ?? []).map((d: DutyRow) => ({
+      ...d,
+      rules: (dutyRules.data ?? []).filter((r: { duty_id: string }) => r.duty_id === d.id),
+    })),
     choreEvents: choreEvents.data ?? [],
     prefs: prefs.data ?? [],
     bills: bills.data ?? [],

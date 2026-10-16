@@ -25,6 +25,10 @@ export type SummaryFacts = {
   withYouToday: { duty: string; who: string }[];
   /** Duties due today that are somebody else's: the duty and whose turn it is. */
   othersDutiesToday: { duty: string; who: string }[];
+  /** Make-up turns YOU owe, per duty. Your own line only; nobody else's summary carries it. */
+  yourMakeups: { duty: string; count: number }[];
+  /** Duties with two or more make-up turns owed in all. A count per duty, never a name — rule 1. */
+  makeupsOwed: { duty: string; count: number }[];
   /** You hold a duty flagged plans_meals today, so you are the one the cook waits on. */
   youPlanMeals: boolean;
   /** Lots at or past their last usable day: name and days left (0 = today, negative = past). */
@@ -139,6 +143,28 @@ function topUpLine(f: SummaryFacts): string | null {
   return `${cap(count(n))} ${plural(n, 'mate', 'mates')} still ${plural(n, "hasn't", "haven't")} topped up this month, and you are holding ${formatINR(f.poolPaise)}.`;
 }
 
+/** What you owe, privately. Missing a turn under a make-up rule costs a turn; this is the reminder. */
+function yourMakeupLine(f: SummaryFacts): string | null {
+  if (f.yourMakeups.length === 0) return null;
+  if (f.yourMakeups.length > 1) return `You have make-up turns to do on ${list(f.yourMakeups.map((m) => m.duty))} — they are on the Duties tab.`;
+  const [{ duty, count: n }] = f.yourMakeups;
+  return `You have ${count(n)} make-up ${plural(n, 'turn', 'turns')} to do on ${duty} — ${plural(n, 'it is', 'they are')} on the Duties tab.`;
+}
+
+/**
+ * The flat-wide nudge, once a duty has two make-up turns owed. It names the DUTY and the count, never
+ * the mate (rule 1): the Duties tab already shows whose turn each one is, and a morning line that
+ * named someone would be the accusation the research warned against. A duty you owe on yourself is
+ * left out — your own line above already says it.
+ */
+function flatMakeupLine(f: SummaryFacts): string | null {
+  const mine = new Set(f.yourMakeups.map((m) => m.duty));
+  const owed = f.makeupsOwed.filter((m) => m.count >= 2 && !mine.has(m.duty));
+  if (owed.length === 0) return null;
+  if (owed.length === 1) return `${cap(owed[0].duty)} has ${count(owed[0].count)} make-up turns waiting.`;
+  return `${cap(list(owed.map((m) => m.duty)))} each have make-up turns waiting.`;
+}
+
 function missedLine(f: SummaryFacts): string | null {
   if (f.missedYesterday === 0) return null;
   const n = f.missedYesterday;
@@ -155,7 +181,7 @@ const LINES = 3; // three lines is a glance; a fourth is a paragraph nobody read
 export function morningSummary(f: SummaryFacts): string[] {
   // rule 3: the alert card above already says this, so the summary drops it rather than echoing it.
   const dropTopUp = f.alert === 'topup';
-  return [dropTopUp ? null : topUpLine(f), dutyLine(f), expiryLine(f), burnLine(f), missedLine(f)]
+  return [dropTopUp ? null : topUpLine(f), dutyLine(f), yourMakeupLine(f), flatMakeupLine(f), expiryLine(f), burnLine(f), missedLine(f)]
     .filter((l): l is string => l !== null)
     .slice(0, LINES);
 }

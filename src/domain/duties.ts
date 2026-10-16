@@ -36,6 +36,23 @@ export type Duty = {
    * Binds WHO, never WHETHER — the two stay separate duties with their own ticks and points.
    */
   follows_id?: string | null;
+  /** How turns go round now — the rule the next edit records. The engine reads `rules`, not these. */
+  turns?: 'order' | 'points';
+  on_miss?: 'makeup' | 'redo' | 'none';
+  /**
+   * Every version of the turn rules, each with the IST day it took effect (the duty_rule table,
+   * 20261017120000). Replayed in order so an edit never re-decides who owned a day already past.
+   * None (a duty older than the table, or a caller that did not load them): the points pick.
+   */
+  rules?: DutyRule[];
+};
+
+export type DutyRule = {
+  starts_on: string;
+  turns: 'order' | 'points';
+  on_miss: 'makeup' | 'redo' | 'none';
+  roster: string[] | null;
+  created_at: string;
 };
 
 export type ChoreEvent = {
@@ -62,7 +79,7 @@ export type DutyMark = {
  * One co-assignee's half of one instance. `ownerId` is the mate the rota picked and never changes;
  * `holderId` is who must tick it now, which differs only after somebody claimed an offer.
  */
-export type Slot = { ownerId: string; holderId: string; done: boolean };
+export type Slot = { ownerId: string; holderId: string; done: boolean; makeup?: boolean };
 
 const DAY = 86_400_000;
 const dayNo = (date: string): number => Date.parse(date + 'T00:00:00Z') / DAY;
@@ -207,13 +224,18 @@ export function assignees(
   events: ChoreEvent[],
   anchor: string,
   duties: Duty[] = [duty],
+  // The day the flat is in. A turn rule replays every earlier instance, and only one before `today`
+  // can be a miss. Defaults to the instance asked about: "as if it were that day".
+  today: string = dueOn,
 ): Slot[] {
   // A follower reads its leader's answer for the day. Resolved here too, not only in rota(), so a
   // caller asking about one duty gets the same answer the rota does.
   const lead = leaderOf(duty, duties);
   const leaderSlots =
-    lead && isDueOn(lead, dueOn, anchor) ? slotsFor(lead, dueOn, members, absences, events, anchor, duties, null) : null;
-  return slotsFor(duty, dueOn, members, absences, events, anchor, duties, leaderSlots);
+    lead && isDueOn(lead, dueOn, anchor)
+      ? slotsFor(lead, dueOn, members, absences, events, anchor, duties, null, today)
+      : null;
+  return slotsFor(duty, dueOn, members, absences, events, anchor, duties, leaderSlots, today);
 }
 
 /**
@@ -236,8 +258,36 @@ function slotsFor(
   anchor: string,
   duties: Duty[],
   leaderSlots: Slot[] | null,
+  today: string,
 ): Slot[] {
   const settled = live(events);
+  // The leader's holders, de-duplicated (one mate never holds two halves), capped at this duty's own
+  // group_size. A leader with nobody available leaves the follower to take its own turn rather than
+  // vanish from the day.
+  const inherited = leaderSlots ? [...new Set(leaderSlots.map((s) => s.holderId))].slice(0, duty.group_size) : [];
+  if (inherited.length > 0) return resolve(duty, dueOn, absences, settled, inherited);
+  if (duty.schedule === 'fixed') return resolve(duty, dueOn, absences, settled, duty.fixed_member_id ? [duty.fixed_member_id] : []);
+  const turn = replay(duty, members, absences, settled, anchor, today, dueOn).turn;
+  if (turn) return resolve(duty, dueOn, absences, settled, turn.ids, turn.makeup);
+  // This instance's OWN events are kept out of the pick, so ticking a duty never re-shuffles the pair
+  // that was on screen a second ago. Other duties on the same day still count — that is how three
+  // duties due today land on three different mates.
+  const past = settled.filter((e) => e.due_on < dueOn || e.duty_id !== duty.id);
+  return resolve(duty, dueOn, absences, settled, pick(duty, dueOn, members, absences, past, anchor, duties));
+}
+
+/**
+ * Who holds each slot of one instance and whether it is done, given the mates the rule put on it
+ * (`base`). Claims, the away rule and recorded Dones are settled here, the same way for every rule.
+ */
+function resolve(
+  duty: Duty,
+  dueOn: string,
+  absences: Absence[],
+  settled: ChoreEvent[],
+  base: string[],
+  makeup: string[] = [],
+): Slot[] {
   const inst = settled.filter((e) => e.duty_id === duty.id && e.due_on === dueOn).sort(byId);
 
   // A claim moves one slot and nothing else: the mate who offered stays its owner, the mate who took
@@ -247,23 +297,6 @@ function slotsFor(
   for (const e of inst)
     if (e.outcome === 'swapped' && e.to_member_id && !away(absences, e.to_member_id, dueOn))
       claim.set(e.member_id, e.to_member_id);
-
-  // This instance's OWN events are kept out of the pick, so ticking a duty never re-shuffles the pair
-  // that was on screen a second ago. Other duties on the same day still count — that is how three
-  // duties due today land on three different mates.
-  const past = settled.filter((e) => e.due_on < dueOn || e.duty_id !== duty.id);
-  // The leader's holders, de-duplicated (one mate never holds two halves), capped at this duty's own
-  // group_size. A leader with nobody available leaves the follower to take its own turn rather than
-  // vanish from the day.
-  const inherited = leaderSlots ? [...new Set(leaderSlots.map((s) => s.holderId))].slice(0, duty.group_size) : [];
-  const base =
-    inherited.length > 0
-      ? inherited
-      : duty.schedule === 'fixed'
-        ? duty.fixed_member_id
-          ? [duty.fixed_member_id]
-          : []
-        : pick(duty, dueOn, members, absences, past, anchor, duties);
 
   // A mate with an event here but no longer in the pick — the roster changed under them — keeps their
   // slot, because their Done is real. Pure claimers are not owners: their 'done' belongs to the slot
@@ -282,8 +315,124 @@ function slotsFor(
     // up nowhere. The mate it robs is the one who covered for a flatmate, which is the exact
     // behaviour the points exist to reward.
     const holderId = taker && !owners.includes(taker) ? taker : ownerId;
-    return { ownerId, holderId, done: inst.some((e) => e.outcome === 'done' && e.member_id === holderId) };
+    const slot: Slot = { ownerId, holderId, done: inst.some((e) => e.outcome === 'done' && e.member_id === holderId) };
+    if (makeup.includes(ownerId)) slot.makeup = true;
+    return slot;
   });
+}
+
+/** The rule in force on `date`: the latest by start day, then by when it was written. */
+const ruleAt = (rules: DutyRule[], date: string): DutyRule | undefined => {
+  let at: DutyRule | undefined;
+  for (const r of rules) if (r.starts_on <= date) at = r; // `rules` is sorted
+  return at;
+};
+
+/**
+ * THE ORDER, replayed. Walks every due instance from the duty's first rule up to `until` and returns
+ * who the rule puts on `until` (null: a points day, a fixed duty, a follower, or no rule yet — the
+ * caller falls back), plus the make-up turns owed as of the start of `until`.
+ *
+ * Down the list, `group_size` at a time, every due day; a mate who is away is passed over for that
+ * turn and owes nothing for it. A new rule (a reorder, a switch) starts at the TOP of its list;
+ * make-up turns owed carry across it. An instance before `today` with a slot not done is a MISS, and
+ * the debt is the HOLDER's — the mate who took an offer took the turn with it. What a miss costs is
+ * the rule in force ON THE DAY OF THE MISS, so switching to 'none' never forgives a turn already owed.
+ *
+ *   makeup — the miss is owed as ONE extra turn, served on the instance straight after the misser's
+ *            NEXT regular turn (never the next day: that is 'redo'). One make-up per regular turn,
+ *            so a mate who keeps missing costs the flat their own days and no more; the debt grows.
+ *   redo   — the misser is put on the very next due instance again.
+ *   none   — the list moves on.
+ *
+ * Make-ups and redos fill a pair duty's slots first; the list fills the rest and only advances for
+ * the mates it actually put on. A make-up whose mate is away waits for the next instance they can do.
+ *
+ * ponytail: replays from the first rule on every call, so rota() is O(instances²) per duty. Fine for
+ * months of a 6-mate flat; memoise per (duty, until) if a year of daily duties ever feels slow.
+ */
+function replay(
+  duty: Duty,
+  members: Member[],
+  absences: Absence[],
+  settled: ChoreEvent[],
+  anchor: string,
+  today: string,
+  until: string,
+): { turn: { ids: string[]; makeup: string[] } | null; owed: Map<string, number> } {
+  const owed = new Map<string, number>();
+  // Followers and fixed duties never take turns of their own here (a follower keeps no roster).
+  if (!duty.rules?.length || duty.schedule === 'fixed' || duty.follows_id) return { turn: null, owed };
+  const rules = [...duty.rules].sort((a, b) => text(a.starts_on, b.starts_on) || text(a.created_at, b.created_at));
+  const add = (id: string, n: number) => owed.set(id, Math.max(0, (owed.get(id) ?? 0) + n));
+  let redo: string[] = []; // 'redo': on the very next instance
+  const armed = new Set<string>(); // owed, and their regular turn just passed: the next instance is their make-up
+  let rule: DutyRule | undefined;
+  let ptr = 0;
+
+  for (const date of dueDates(duty, rules[0].starts_on, until, anchor)) {
+    const r = ruleAt(rules, date)!;
+    if (r !== rule) [rule, ptr] = [r, 0];
+    if (r.turns !== 'order') {
+      if (date === until) return { turn: null, owed };
+      continue;
+    }
+    const order = r.roster ?? members.map((m) => m.id).sort();
+    const can = (id: string) => {
+      const m = members.find((x) => x.id === id);
+      return !!m && onRoll(m, date) && !away(absences, id, date);
+    };
+    const k = Math.max(1, duty.group_size);
+
+    const makeup = [...new Set([...redo, ...armed])].filter(can).slice(0, k);
+    for (const id of makeup) {
+      redo = redo.filter((x) => x !== id);
+      if (armed.delete(id)) add(id, -1);
+    }
+    const regular: string[] = [];
+    let used = -1;
+    for (let i = 0; i < order.length && makeup.length + regular.length < k; i++) {
+      const id = order[(ptr + i) % order.length];
+      if (can(id) && !makeup.includes(id) && !regular.includes(id)) [regular[regular.length], used] = [id, i];
+    }
+    if (used >= 0) ptr = (ptr + used + 1) % order.length;
+    const ids = [...makeup, ...regular];
+    if (date === until) return { turn: { ids, makeup }, owed: withRedo(owed, redo) };
+
+    // A regular turn arms the make-up its mate ALREADY owed. Read before this instance's own outcome,
+    // so a miss today is paid after their next turn, not tomorrow.
+    for (const id of regular) if ((owed.get(id) ?? 0) > 0) armed.add(id);
+    if (date < today)
+      for (const s of resolve(duty, date, absences, settled, ids))
+        if (!s.done) {
+          if (r.on_miss === 'makeup') add(s.holderId, 1);
+          else if (r.on_miss === 'redo' && !redo.includes(s.holderId)) redo.push(s.holderId);
+        }
+  }
+  return { turn: null, owed: withRedo(owed, redo) };
+}
+
+/** A pending redo is a make-up turn owed too, as far as anyone reading the count is concerned. */
+const withRedo = (owed: Map<string, number>, redo: string[]): Map<string, number> => {
+  const out = new Map(owed);
+  for (const id of redo) out.set(id, (out.get(id) ?? 0) + 1);
+  for (const [id, n] of out) if (n <= 0) out.delete(id);
+  return out;
+};
+
+/**
+ * Make-up turns each mate owes on one duty as of `today` (ids with nothing owed are left out). Read
+ * by Home for the private line and by the morning summary for the flat-wide one.
+ */
+export function owedTurns(
+  duty: Duty,
+  members: Member[],
+  absences: Absence[],
+  events: ChoreEvent[],
+  anchor: string,
+  today: string,
+): Map<string, number> {
+  return replay(duty, members, absences, live(events), anchor, today, today).owed;
 }
 
 /** The rolling pick: `group_size` mates off the top of the deficit order. */
@@ -369,7 +518,7 @@ export function rota(
   }
 
   const place = (duty: Duty, date: string, leaderSlots: Slot[] | null): Slot[] => {
-    const slots = slotsFor(duty, date, members, absences, [...events, ...provisional], anchor, duties, leaderSlots);
+    const slots = slotsFor(duty, date, members, absences, [...events, ...provisional], anchor, duties, leaderSlots, today);
     for (const s of slots)
       // A slot already past its due date with no Done is MISSED, and a missed slot gets NO
       // provisional credit. Crediting it would push whoever missed it down the queue — credit for

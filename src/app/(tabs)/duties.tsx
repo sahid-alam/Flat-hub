@@ -279,6 +279,7 @@ export default function Duties() {
         <T size={14} weight={yours ? '700' : '500'} soft={!yours} style={{ flex: 1, minWidth: 160 }}>
           {claimed ? (yours ? 'Your turn now' : `${who.split(' ')[0]}’s turn now`) : yours ? 'Your turn' : `${who.split(' ')[0]}’s turn`}
           {claimed && ` · ${yours ? 'you' : who.split(' ')[0]} took it from ${owner.split(' ')[0]}`}
+          {slot.makeup && ' · make-up'}
           {isOffered && ' · offered, waiting for somebody to take it'}
         </T>
         {yours && when !== 'future' && (

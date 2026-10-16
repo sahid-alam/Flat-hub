@@ -87,8 +87,10 @@ async function prefs(db: SupabaseClient, householdId: string, trigger: string): 
 
 /** "Your duty is due today" — doc row #1. Unconditional cron; the rota decides who. */
 async function dutyDueToday(db: SupabaseClient, today: string): Promise<Recipient[]> {
-  const [duties, members, absences, events] = await Promise.all([
+  const [dutyRows, rules, members, absences, events] = await Promise.all([
     db.from('duty').select('*'),
+    // The turn rules, or the push names whoever the points pick would, not who the Duties tab shows.
+    db.from('duty_rule').select('duty_id, starts_on, turns, on_miss, roster, created_at').order('starts_on').order('created_at'),
     db.from('member').select('id, household_id, joined_on, left_on'),
     db.from('member_absence').select('member_id, household_id, from_date, to_date'),
     // The rota only ever looks backwards from `due_on`, so there is no reason to read the future.
@@ -101,7 +103,13 @@ async function dutyDueToday(db: SupabaseClient, today: string): Promise<Recipien
     // than fail together. Fix: page with .range() until a short page comes back, in both places.
     db.from('chore_event').select('*').lte('due_on', today),
   ]);
-  for (const r of [duties, members, absences, events]) if (r.error) throw r.error;
+  for (const r of [dutyRows, rules, members, absences, events]) if (r.error) throw r.error;
+  const duties = {
+    data: (dutyRows.data ?? []).map((d: { id: string }) => ({
+      ...d,
+      rules: (rules.data ?? []).filter((x: { duty_id: string }) => x.duty_id === d.id),
+    })),
+  };
 
   const out: Recipient[] = [];
   const households = new Set((duties.data as { household_id: string }[]).map((d) => d.household_id));

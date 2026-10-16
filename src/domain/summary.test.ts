@@ -10,6 +10,8 @@ const facts = (over: Partial<SummaryFacts> = {}): SummaryFacts => ({
   poolPaise: 0,
   yourDutiesToday: [],
   withYouToday: [],
+  yourMakeups: [],
+  makeupsOwed: [],
   othersDutiesToday: [],
   youPlanMeals: false,
   expiring: [],
@@ -201,4 +203,21 @@ test('the word "owe" never appears — DESIGN.md rule 5', () => {
     }),
   ).join(' ');
   assert.ok(!/owe/i.test(lines));
+});
+
+test('make-up turns: yours privately, the flat\u2019s only at two or more, and never a name', () => {
+  assert.equal(
+    morningSummary(facts({ yourMakeups: [{ duty: 'garbage dump', count: 1 }] }))[0],
+    'You have one make-up turn to do on garbage dump — it is on the Duties tab.',
+  );
+  assert.deepEqual(morningSummary(facts({ makeupsOwed: [{ duty: 'garbage dump', count: 1 }] })), []);
+  const flat = morningSummary(facts({ makeupsOwed: [{ duty: 'garbage dump', count: 2 }] }));
+  assert.deepEqual(flat, ['Garbage dump has two make-up turns waiting.']);
+  // rule 1: whoever owes them is not in the line. The fact has no name in it, so neither can the line.
+  assert.ok(!/Adnan|Anant|Ansh|Sahid|Ayan|Jatin/.test(flat.join(' ')));
+  // the mate who owes them gets their own line, not the flat's as well
+  assert.deepEqual(
+    morningSummary(facts({ yourMakeups: [{ duty: 'garbage dump', count: 2 }], makeupsOwed: [{ duty: 'garbage dump', count: 2 }] })),
+    ['You have two make-up turns to do on garbage dump — they are on the Duties tab.'],
+  );
 });

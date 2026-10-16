@@ -11,7 +11,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
-import { donePoints, rota } from '@/domain/duties';
+import { donePoints, owedTurns, rota } from '@/domain/duties';
 import { poolCash, position, suggestedTopup, toReimburse, unreimbursed } from '@/domain/kitty';
 import { formatINR, upiAmount } from '@/domain/money';
 import { periodTotal } from '@/domain/stats';
@@ -138,6 +138,11 @@ export default function Home() {
     .flatMap((r) => r.slots)
     .filter((s) => !s.done).length;
 
+  // Make-up turns owed per duty (20261017120000). Duties the turn rules do not cover owe nothing.
+  const owing = duties
+    .filter((d) => d.active)
+    .map((d) => ({ duty: d.name.toLowerCase(), owed: owedTurns(d, members, absences, choreEvents, anchor, now) }));
+
   // ---------------------------------------------------------------- meals
   // The flag, never the name: a flat that renames "Dishes" keeps its meal planner. rota() hands back
   // the engine's `Duty`, which has no UI flags on it, so the row is looked up by id instead.
@@ -164,6 +169,11 @@ export default function Home() {
       .filter((s) => s.holderId !== me.id)
       .map((s) => ({ duty: s.duty.name.toLowerCase(), who: first(name(s.holderId)) })),
     youPlanMeals,
+    yourMakeups: owing.flatMap((o) => ((o.owed.get(me.id) ?? 0) > 0 ? [{ duty: o.duty, count: o.owed.get(me.id)! }] : [])),
+    makeupsOwed: owing.flatMap((o) => {
+      const total = [...o.owed.values()].reduce((a, n) => a + n, 0);
+      return total > 0 ? [{ duty: o.duty, count: total }] : [];
+    }),
     expiring: soon.map((l) => ({ name: productName(l.product_id), daysLeft: daysLeft(l.expiry_date, nowIso) ?? 0 })),
     othersNotToppedUp: current.filter((m) => m.id !== me.id && !toppedUp.has(m.id)).length,
     missedYesterday,
