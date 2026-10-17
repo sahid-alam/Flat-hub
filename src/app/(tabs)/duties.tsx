@@ -447,25 +447,39 @@ export default function Duties() {
         <T size={22} weight="700">
           Duties
         </T>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Manage duties"
-          onPress={() => router.push('/duties/manage')}
-          style={({ pressed }) => [
-            {
-              minHeight: 48,
-              justifyContent: 'center',
-              paddingHorizontal: 16,
-              borderRadius: 24,
-              borderWidth: 1.5,
-              borderColor: brass ? c.line : c.accentText,
-            },
-            pressed && { transform: [{ scale: 0.97 }] },
-          ]}>
-          <T size={15} weight="700" color={brass ? c.ink : c.accentText}>
-            Manage
-          </T>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Calendar — every day's turns, meals and bills"
+            onPress={() => router.push('/calendar')}
+            style={({ pressed }) => [
+              { minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 24, borderWidth: 1.5, borderColor: c.line },
+              pressed && { transform: [{ scale: 0.97 }] },
+            ]}>
+            <T size={15} weight="700">
+              Calendar
+            </T>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage duties"
+            onPress={() => router.push('/duties/manage')}
+            style={({ pressed }) => [
+              {
+                minHeight: 48,
+                justifyContent: 'center',
+                paddingHorizontal: 16,
+                borderRadius: 24,
+                borderWidth: 1.5,
+                borderColor: brass ? c.line : c.accentText,
+              },
+              pressed && { transform: [{ scale: 0.97 }] },
+            ]}>
+            <T size={15} weight="700" color={brass ? c.ink : c.accentText}>
+              Manage
+            </T>
+          </Pressable>
+        </View>
       </View>
       <Screen padBottom={TAB_BAR}>
         <Block tone="raised" accessibilityLabel={digest}>
