@@ -29,6 +29,7 @@ import {
   tokens,
   usePalette,
 } from '@/ui/kit';
+import { askForUpi } from '@/ui/pay';
 
 export default function Kitty() {
   const c = usePalette();
@@ -249,9 +250,7 @@ function TopUpCard({
             onPress={() => Linking.openURL(upi).catch(() => setError('No UPI app found on this phone.'))}
           />
         ) : (
-          <T size={15} weight="600">
-            {first} hasn&apos;t added a UPI ID yet (Profile → UPI ID).
-          </T>
+          <OnyxPill label={`Ask ${first} to add a UPI ID`} outline onPress={() => void askForUpi(first)} />
         ))}
       <OnyxPill
         label={busy ? 'Saving…' : self ? 'Record my top-up' : "I've paid, record it"}

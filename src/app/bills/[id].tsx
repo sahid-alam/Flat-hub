@@ -11,6 +11,7 @@ import { newId } from '@/lib/id';
 import { insertOnce } from '@/lib/supabase';
 import { dayLabel, sayError } from '@/lib/util';
 import { Block, Chip, ErrorText, Hero, MagnetButton, Rule, Screen, SectionLabel, T } from '@/ui/kit';
+import { PayWithUpi } from '@/ui/pay';
 
 export default function BillDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +26,7 @@ export default function BillDetail() {
   const owing = owingOnBill(bill, billShares, billPayments);
   const mine = bill.paid_by === me.id;
   const left = Object.values(owing).reduce((a, p) => a + p, 0);
+  const payer = members.find((m) => m.id === bill.paid_by);
 
   async function markPaid(memberId: string, paise: number) {
     setBusy(memberId);
@@ -104,6 +106,9 @@ export default function BillDetail() {
         })}
       </Block>
 
+      {!mine && (owing[me.id] ?? 0) > 0 && payer && (
+        <PayWithUpi to={payer} paise={owing[me.id]} note={`FlatHub · ${bill.label}`} />
+      )}
       {!mine && (
         <T size={15} soft>
           {name(bill.paid_by).split(' ')[0]} marks your share settled once you have handed it over.

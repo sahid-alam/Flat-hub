@@ -9,6 +9,7 @@ import { insertOnce } from '@/lib/supabase';
 import { dayLabel } from '@/lib/util';
 import { SOURCE } from '@/ui/activity';
 import { Block, Chip, ErrorText, MagnetButton, Rule, Screen, SectionLabel, T } from '@/ui/kit';
+import { PayWithUpi } from '@/ui/pay';
 
 /** Ansh's list: own-pocket spends the kitty still has to pay back. Only the treasurer can mark them paid. */
 export default function ToReimburse() {
@@ -59,6 +60,8 @@ export default function ToReimburse() {
               {formatINR(toReimburse(books, m.id))}
             </T>
           </View>
+          {/* Send it all in one UPI payment, then mark each spend paid back below. */}
+          {isTreasurer && <PayWithUpi to={m} paise={toReimburse(books, m.id)} note="FlatHub · paying back your spends" />}
           {owed
             .filter((s) => s.paid_by === m.id)
             .map((s) => (
