@@ -77,7 +77,16 @@ export const awayDays = (from: string, to: string): number => dayNo(to) - dayNo(
 
 // ---------------------------------------------------------------- the private calendar feed
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+// Text values come from what mates typed (a duty name, the flat's name). Every kind of line break
+// becomes the escaped \n and any other control character goes, so a name can never end its line and
+// start a property of its own in someone's calendar.
+const esc = (s: string) =>
+  s
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r\n|\r|\n/g, '\\n')
+    .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, '');
 const compact = (date: string) => date.replace(/-/g, '');
 
 /**

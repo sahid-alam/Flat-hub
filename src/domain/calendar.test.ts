@@ -51,3 +51,11 @@ test('the calendar feed: my turns only, one stable event each, valid iCalendar l
   for (const line of ics.split('\r\n')) assert.ok(new TextEncoder().encode(line).length <= 75, `folded: ${line}`);
   assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
 });
+
+test('a name with a line break cannot add a line of its own to the feed', () => {
+  const sneaky = { ...garbage, name: 'Bins\rATTENDEE:mailto:x@evil\r\nX-INJ:1\u0007' };
+  const ics = icsFeed([{ date: '2026-10-05', duty: sneaky, slots: [{ ownerId: 'b', holderId: 'b', done: false }] }], 'b', 'Flat', '2026-10-03', '20261003T000000Z');
+  const lines = ics.split('\r\n').map((l) => l.replace(/^ /, ''));
+  assert.ok(!lines.some((l) => l.startsWith('ATTENDEE') || l.startsWith('X-INJ')), 'no injected property');
+  assert.ok(!/[\r\u0007]/.test(ics.replace(/\r\n/g, '')), 'no stray CR or control character survives');
+});

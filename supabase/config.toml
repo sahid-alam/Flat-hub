@@ -389,6 +389,11 @@ allow_dynamic_registration = false
 # only thing stopping someone with the client bundle firing the 08:00 reminder at 03:00.
 verify_jwt = false
 
+[functions.calendar]
+# Calendar apps fetch the feed URL without signing in, so the gateway must not demand a JWT. The long
+# random token in the URL is the credential; the function answers 404 to anything else.
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

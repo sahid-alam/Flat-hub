@@ -4,7 +4,7 @@
 // dates; mark yourself away from here and see whose turns change before you commit.
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, Share, StyleSheet, View } from 'react-native';
 
 import { awayDays, awayPreview, marksOn, monthWeeks, shiftDate, type Mark } from '@/domain/calendar';
 import { leaderOf, missed, offered, rota, type RotaRow, type Slot } from '@/domain/duties';
@@ -12,7 +12,7 @@ import { formatINR } from '@/domain/money';
 import { isEmpty } from '@/domain/stock';
 import { newId } from '@/lib/id';
 import { insertOnce, supabase } from '@/lib/supabase';
-import { dayLabel, monthLabel, sayError, today } from '@/lib/util';
+import { confirm, dayLabel, monthLabel, sayError, today } from '@/lib/util';
 import { useDuties } from '@/ui/duties';
 import {
   Block,
@@ -333,6 +333,8 @@ export default function Calendar() {
         />
       )}
 
+      <FeedCard householdId={household.id} />
+
       {away && (
         <AwaySheet
           away={away}
@@ -365,6 +367,72 @@ export default function Calendar() {
         />
       )}
     </Screen>
+  );
+}
+
+/**
+ * Your turns in your phone's own calendar, through a private feed (20261017150000). Google and Apple
+ * Calendar re-read it every few hours, so a reorder or a swap reaches the phone without the app open,
+ * and the calendar's own reminders do the nagging — no push notifications to set up.
+ */
+function FeedCard({ householdId }: { householdId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const feed = async (reset = false) => {
+    const { data, error: e } = await supabase.rpc('calendar_feed_token', { p_household: householdId, p_reset: reset });
+    if (e) throw e;
+    return `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar?token=${data as string}`;
+  };
+  const webcal = (url: string) => url.replace(/^https?:/, 'webcal:');
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (e) {
+      setError(sayError(e));
+    }
+    setBusy(false);
+  };
+  return (
+    <Block tone="raised" style={{ gap: 10 }}>
+      <T size={16} weight="700">
+        Your turns in your phone&apos;s calendar
+      </T>
+      <T size={13} soft>
+        Google Calendar or your phone&apos;s calendar shows your turns with its own reminders, and picks up changes to the
+        rota every few hours. The link is private to you.
+      </T>
+      <MagnetButton
+        label="Add to Google Calendar"
+        disabled={busy}
+        onPress={() =>
+          run(async () => {
+            const url = await feed();
+            await Linking.openURL(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal(url))}`);
+          })
+        }
+      />
+      <MagnetButton
+        label="Add to iPhone or other calendar"
+        outline
+        disabled={busy}
+        onPress={() => run(async () => void (await Linking.openURL(webcal(await feed()))))}
+      />
+      <View style={s.bar}>
+        <Pill label="Share the link" onPress={() => run(async () => void (await Share.share({ message: await feed() })))} />
+        <Pill
+          label="Reset link"
+          onPress={() =>
+            run(async () => {
+              if (await confirm('Reset your calendar link?', 'The old link stops working. Add the new one to your calendar again.', 'Reset'))
+                await feed(true);
+            })
+          }
+        />
+      </View>
+      <ErrorText error={error} />
+    </Block>
   );
 }
 
